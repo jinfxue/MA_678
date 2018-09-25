@@ -1,0 +1,476 @@
+---
+title: "Homework 02"
+author: "Jinfei Xue"
+date: "Septemeber 21, 2018"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+\newcommand{\mat}[1]{\boldsymbol{#1}} 
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\rv}[1]{\underline{#1}}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,dev="CairoPNG",fig.align = "center", 
+                      fig.width = 5.656, fig.height = 4, global.par = TRUE)
+pacman::p_load("arm","data.table","Cairo","faraway","foreign","ggplot2","knitr")
+par (mar=c(3,3,2,1), mgp=c(2,.7,0), tck=-.01)
+```
+
+# Introduction 
+In homework 2 you will fit many regression models.  You are welcome to explore beyond what the question is asking you.  
+
+Please come see us we are here to help.
+
+## Data analysis 
+
+### Analysis of earnings and height data
+#round(confint(r),2)
+The folder `earnings` has data from the Work, Family, and Well-Being Survey (Ross, 1990).
+You can find the codebook at http://www.stat.columbia.edu/~gelman/arm/examples/earnings/wfwcodebook.txt
+```{r}
+gelman_dir <- "http://www.stat.columbia.edu/~gelman/arm/examples/"
+heights    <- read.dta (paste0(gelman_dir,"earnings/heights.dta"))
+```
+
+Pull out the data on earnings, sex, height, and weight.
+
+1. In R, check the dataset and clean any unusually coded data.
+
+```{r}
+require(foreign)
+require(arm)
+require(ggplot2)
+
+#exclude NA's
+heights <- na.omit(heights)
+
+#scale earnings(divided by 1000)
+heights$earn <- heights$earn / 1000
+
+```
+
+2. Fit a linear regression model predicting earnings from height. What transformation should you perform in order to interpret the intercept from this model
+as average earnings for people with average height?
+
+```{r}
+# centralize "height"
+heights$height <- heights$height - mean(heights$height)
+
+# Model 1
+r_1 <- lm(earn ~ height, data=heights)
+summary(r_1)
+
+```
+
+*In order to interpret the intercept as average earnings for people with average height, I perform the centralization on the independent variable "height", which makes heights equal to original heights data minus its mean.*
+
+*According to the regression result, the average earnings for people with average height is 20.0149 thousand dollars.*
+
+3. Fit some regression models with the goal of predicting earnings from some
+combination of sex, height, and weight. Be sure to try various transformations and interactions that might make sense. Choose your preferred model and justify.
+
+```{r}
+# Model 2: transformation by standardizing height
+heights$height<-heights$height/sd(heights$height)
+r_2 <- lm(earn ~ height, data=heights)
+summary(r_2)
+plot(resid(r_2))
+abline(h=0)
+ggplot(r_2)+aes(y=heights$earn,x=height)+geom_point(color="black")+geom_smooth()
+```
+
+```{r}
+#Model 3:log transformation on log(earn+1)
+r_3<-lm(log(earn+1)~height,data = heights)
+summary(r_3)
+plot(resid(r_3))
+abline(h=0)
+```
+
+```{r}
+#Model 4: combination of sex, height, and weight
+heights$sex <- factor(heights$sex, labels=c("male", "female"))
+r_4<-lm(earn~height+sex+height*sex, data = heights)
+summary(r_4)
+ggplot(heights)+aes(x=height,y=earn,label=sex,color=sex)+theme(legend.position="none")+
+   geom_text()+geom_smooth(method="lm",se=FALSE)
+```
+
+*From the regression result, we can see the coefficient of $height \cdot sex$ is not significant. Besides, the height versus earn plot shows the interaction does not fit very well.*
+
+*According to the regression results of models shown above, I think Model 3 fit the data best because all of its coefficients are significant and the adjusted R-square is biggest.*
+
+4. Interpret all model coefficients.
+
+*For Model 3, the regression linear model is $log(earn+1)=2.50589+0.39214height$.*
+
+*$beta_0=2.50589$ means if z-score height value equals to 0, then the expected value of earn would be $e^(2.50589)-1$.*
+
+*if we change z-score height value by 1 unit, we¡¯d expect our earn variable to increase by 39.214 percent plus 0.39214 unit*
+
+5. Construct 95% confidence interval for all model coefficients and discuss what they mean.
+
+```{r}
+confint(r_3,level = 0.95)
+```
+
+*we have 95% of confidence that the range [2.4434867,2.5683017] will include the intercept coefficient's true value.*
+
+*we have 95% of confidence that that the range [0.3297131,0.4545734] will include the height coefficient's true value.*
+
+### Analysis of mortality rates and various environmental factors
+
+The folder `pollution` contains mortality rates and various environmental factors from 60 U.S. metropolitan areas from McDonald, G.C. and Schwing, R.C. (1973) 'Instabilities of regression estimates relating air pollution to mortality', Technometrics, vol.15, 463-482. 
+
+Variables, in order:
+
+* PREC   Average annual precipitation in inches
+* JANT   Average January temperature in degrees F
+* JULT   Same for July
+* OVR65  % of 1960 SMSA population aged 65 or older
+* POPN   Average household size
+* EDUC   Median school years completed by those over 22
+* HOUS   % of housing units which are sound & with all facilities
+* DENS   Population per sq. mile in urbanized areas, 1960
+* NONW   % non-white population in urbanized areas, 1960
+* WWDRK  % employed in white collar occupations
+* POOR   % of families with income < $3000
+* HC     Relative hydrocarbon pollution potential
+* NOX    Same for nitric oxides
+* SO@    Same for sulphur dioxide
+* HUMID  Annual average % relative humidity at 1pm
+* MORT   Total age-adjusted mortality rate per 100,000
+
+For this exercise we shall model mortality rate given nitric oxides, sulfur dioxide, and hydrocarbons as inputs. This model is an extreme oversimplification as it combines all sources of mortality and does not adjust for crucial factors such as age and smoking. We use it to illustrate log transformations in regression.
+
+```{r}
+gelman_dir   <- "http://www.stat.columbia.edu/~gelman/arm/examples/"
+pollution    <- read.dta (paste0(gelman_dir,"pollution/pollution.dta"))
+```
+
+1. Create a scatterplot of mortality rate versus level of nitric oxides. Do you think linear regression will fit these data well? Fit the regression and evaluate a residual plot from the regression.
+
+```{r}
+#Model 1
+mort<-pollution$mort
+nox<-pollution$nox
+#Create a scatterplot of mortality rate versus level of nitric oxides
+plot(x=nox,y=mort)
+#Regression Model
+r_1<-lm(mort~nox)
+summary(r_1)
+#residual plot from the regression
+plot(r_1,which=1)
+```
+
+*The regression does not fit the data well, because the first plot shows right-skewness and they do not have linear relationship. Besides, the second plot shows residuals are not evenly distributed around the dotted line.*
+
+2. Find an appropriate transformation that will result in data more appropriate for linear regression. Fit a regression to the transformed data and evaluate the new residual plot.
+
+```{r}
+#Model 2
+nox_log<-log(nox)
+plot(nox_log,mort)
+r_2<-lm(mort~nox_log)
+summary(r_2)
+plot(r_2,which=1)
+```
+
+*In this case, the residuals evenly distributed on both sides of dotted line in the scatter plot, so Model 2 is more appropriate than Model 1.*
+
+3. Interpret the slope coefficient from the model you chose in 2.
+
+*According to the regression result, the linear regression model is $mort=904.724+15.335log(nox)$.*
+
+*The slope coefficient means if we increase nox by one percent, we expect mort to increase by 0.15335 units of mort.*
+
+4. Construct 99% confidence interval for slope coefficient from the model you chose in 2 and interpret them.
+
+```{r}
+confint(r_2,level = 0.99)
+```
+
+**we have 99% of confidence that that the range [-2.230963,32.90196] will include the slope coefficient's true value.*
+
+5. Now fit a model predicting mortality rate using levels of nitric oxides, sulfur dioxide, and hydrocarbons as inputs. Use appropriate transformations when
+helpful. Plot the fitted regression model and interpret the coefficients.
+
+```{r}
+so2<-pollution$so2
+hc<-pollution$hc
+mort_log<-log(mort)
+##Model 3
+r_3<-lm(mort_log~log(nox)+log(so2)+log(hc))
+summary(r_3)
+#Plot the fitted regression model
+library(ggplot2)
+ggplot(r_3) + aes(x=log(nox)+log(so2)+log(hc),y=mort_log) + 
+  geom_point() + stat_smooth(method = "lm",col = "red")
+```
+
+*According to the regression result, the linear regression model is $log(mort)=6.826749+0.059837log(nox)+0.014309log(so2)-0.060812log(hc)$.*
+
+*1> The intercept coefficient means when nox=so2=hc=1, the expected value of mort would be e^6.826749.*
+
+*2> With the same so2 and hc levels, if we increase nox by one percent, we¡¯d expect mort to increase by 0.059837 percent.*
+
+*3> With the same nox and hc levels, if we increase so2 by one percent, we¡¯d expect mort to increase by 0.014309 percent.*
+
+*4> With the same nox and so2 levels, if we increase hc by one percent, we¡¯d expect mort to decrease by 0.060812 percent.*
+
+6. Cross-validate: fit the model you chose above to the first half of the data and then predict for the second half. (You used all the data to construct the model in 4, so this is not really cross-validation, but it gives a sense of how the steps of cross-validation can be implemented.)
+
+```{r}
+dim(pollution)
+data1<-pollution[1:30,]
+data2<-pollution[31:60,]
+r_data1<-lm(log(mort)~log(nox)+log(so2)+log(hc),data=data1)
+prediction<-predict(object = r_data1,newdata =
+                      data.frame(nox=data2$nox,so2=data2$so2,hc=data2$hc),
+                    interval= "prediction") 
+#the difference between the actual values and the predicted values
+residual<-prediction[,1]-pollution[31:60,]$mort
+plot(residual)
+```
+
+### Study of teenage gambling in Britain
+
+```{r,message =FALSE}
+data(teengamb)
+?teengamb
+```
+
+1. Fit a linear regression model with gamble as the response and the other variables as predictors and interpret the coefficients. Make sure you rename and transform the variables to improve the interpretability of your regression model.
+
+```{r}
+gamble_log<-log(teengamb$gamble+1)
+sex<-teengamb$sex
+status_zscore<-(teengamb$status-mean(teengamb$status))/sd(teengamb$status)
+income<-teengamb$income
+verbal<-teengamb$verbal
+r_1<-lm(gamble_log~sex+status_zscore+income+verbal)
+summary(r_1)
+```
+
+*According to the regression result, the linear regression model is $log(gamble+1)=3.06554-0.87120sex+0.51496status_zscore+0.21565income-0.26165verbal$.*
+
+*1> The intercept coefficient means when the teenager is male, his socioeconomic status score equals to the mean of status score, his income and verbal score are zero, the expected value of his expenditure on gambling in pounds per year would be e^3.06554-1.*
+
+*2> With the same status score, income and verbal score levels, the expected value of expenditure on gambling in pounds per year plus 1 of a female would be 87.120 percent less than that of a male.*
+
+*3> With the same sex, income and verbal score levels, if we increase status score by one unit, we¡¯d expect expenditure on gambling in pounds per year plus 1 to increase by 51.496 percent.*
+
+*4> With the same sex, status score and verbal score levels, if we increase income by one unit, we¡¯d expect expenditure on gambling in pounds per year plus 1 to increase by 21.565 percent.*
+
+*5> With the same sex, status score and income levels, if we increase verbal score by one percent, we¡¯d expect expenditure on gambling in pounds per year plus 1 to decrease by 26.165 percent.*
+
+2. Create a 95% confidence interval for each of the estimated coefficients and discuss how you would interpret this uncertainty.
+
+```{r}
+confint(r_1,level = 0.95)
+```
+
+*1> We have 95% of confidence that the range [1.56816814,4.56290788] will include the intercept coefficient's true value.*
+
+*2> We have 95% of confidence that the range [-1.66365707,-0.07873377] will include the sex coefficient's true value.*
+
+*3> We have 95% of confidence that the range [0.04660771,0.98330592] will include the z-score status coefficient's true value.*
+
+*4> We have 95% of confidence that the range [0.11668468,0.31460764] will include the income coefficient' true value.*
+
+*5> We have 95% of confidence that the range [-0.47128110,-0.05200895] will include the verbal coefficient's true value.*
+
+3. Predict the amount that a male with average status, income and verbal score would gamble along with an appropriate 95% CI.  Repeat the prediction for a male with maximal values of status, income and verbal score.  Which CI is wider and why is this result expected?
+
+```{r}
+#calculate CI of average value
+prediction_average<-predict(object = r_1,newdata=
+  data.frame(sex=0,status_zscore=0,income=mean(teengamb$income),
+             verbal=mean(teengamb$verbal)),level = 0.95,interval = "prediction")
+CI_1<-prediction_average[3]-prediction_average[2]
+
+#calculate CI of maximal value
+prediction_max<-predict(object = r_1,newdata=
+  data.frame(sex=0,status_zscore=max(status_zscore),
+             income=max(teengamb$income),verbal=max(teengamb$verbal)),
+             level = 0.95,interval = "prediction")
+CI_2<-prediction_max[3]-prediction_max[2]
+
+#Compare CI_1 with CI_2
+CI_1<CI_2
+```
+
+*The result of logical code is "TRUE". That is to say, CI of the amount that a male with maximal values of status, income and verbal score would gamble is wider than that of a male with average values of status, income and verbal score would gamble.*
+
+*The reason is that the length of CI is $2*\frac{s}{\sqrt{n}}*t_{\frac{\alpha}{2}}$. For a male with maximal values of status, income and verbal score, the standard error $s$ is larger than that of a male with average status, income and verbal score.*
+
+### School expenditure and test scores from USA in 1994-95
+
+```{r}
+data(sat)
+?sat
+```
+
+1. Fit a model with total sat score as the outcome and expend, ratio and salary as predictors.  Make necessary transformation in order to improve the interpretability of the model.  Interpret each of the coefficient.
+
+```{r}
+total<-sat$total
+expend_zscore<-(sat$expend-mean(sat$expend))/sd(sat$expend)
+ratio_zscore<-(sat$ratio-mean(sat$ratio))/sd(sat$ratio)
+salary_zscore<-(sat$salary-mean(sat$salary))/sd(sat$salary)
+r_sat1<-lm(log(total)~expend_zscore+ratio_zscore+salary_zscore,data = sat)
+summary(r_sat1)
+plot(resid(r_sat1))
+abline(h=0)
+```
+
+              Estimate Std. Error t value Pr(>|t|)    
+(Intercept)    6.87016    0.01001 686.348   <2e-16 ***
+expend_zscore  0.02391    0.03098   0.772   0.4442    
+ratio_zscore   0.01540    0.01529   1.008   0.3189    
+salary_zscore -0.05443    0.02877  -1.892   0.0648 .  
+
+*According to the regression result, the linear regression model is $log(total)=6.87016+0.02391expend_zscore+0.01540ratio_zscore-0.05443salary_zscore$.*
+
+*1> The intercept coefficient means when the expenditure, ratio and salary of a student equal to their corresponding means, the expected value of the student's total score in SAT would be e^6.87016.*
+
+*2> With the same ratio and salary levels, if we increase expend_zscore by one unit, we¡¯d expect the student's total score in SAT to increase by 2.391 percent.*
+
+*3> With the same expenditure and salary levels, if we increase ratio_zscore by one unit, we¡¯d expect the student's total score in SAT to increase by 1.54 percent.*
+
+*4> With the same expenditure and ratio levels, if we increase salary_zscore by one unit, we¡¯d expect the student's total score in SAT to decrease by 5.443 percent.*
+
+2. Construct 98% CI for each coefficient and discuss what you see.
+
+```{r}
+confint(object = r_sat1,level = 0.98)
+```
+
+*1> We have 98% of confidence that the range [6.84603569,6.89428636] will include the intercept coefficient's true value.*
+
+*2> We have 98% of confidence that the range [-0.05075940,0.09857730] will include the expend_zscore coefficient's true value.*
+
+*3> We have 98% of confidence that the range [-0.02143981,0.05224324] will include the ratio_zscore status coefficient's true value.*
+
+*4> We have 98% of confidence that the range [-0.12377316,0.01490439] will include the salary_zscore coefficient' true value.*
+
+3. Now add takers to the model.  Compare the fitted model to the previous model and discuss which of the model seem to explain the outcome better?
+
+```{r}
+takers_zscore<-(sat$takers-mean(sat$takers))/sd(sat$takers)
+r_sat2<-lm(log(total)~expend_zscore+ratio_zscore+salary_zscore+takers_zscore,data = sat)
+summary(r_sat2)
+```
+
+*This model is better compared to the previous one. The reasons are as follows:*
+
+*1> The R squared of the second model is much more larger.*
+
+*2> The coefficient of takers_zscore we added is a statistically significant.*
+
+*3> The p-value of F statistics in the second value is much more smaller, which means the total independent variables in the second model can explain the dependent variable better.*
+
+# Conceptual exercises.
+
+### Special-purpose transformations:
+
+For a study of congressional elections, you would like a measure of the relative amount of money raised by each of the two major-party candidates in each district. Suppose that you know the amount of money raised by each candidate; label these dollar values $D_i$ and $R_i$. You would like to combine these into a single variable that can be included as an input variable into a model predicting vote share for the Democrats.
+
+Discuss the advantages and disadvantages of the following measures:
+
+* The simple difference, $D_i-R_i$
+
+*Advantages: This measurement is easy to interpret, we can just say one unit of the numerical difference between two parties' amount will lead to how many unit of difference.*
+
+*Disadvantages: This doesn't take difference proportion into account.*
+
+* The ratio, $D_i/R_i$
+
+*Advantages: It is easy to interpret how the ratio of money raised by two candidates can effect the result.*
+
+*Disadvantages: It can only indicate the effect of ratio. For example, when $D_i=200$,$R_i=100$, the result is same with the situation in which $D_i=400$,$R_i=200$.*
+
+* The difference on the logarithmic scale, $log D_i-log R_i$ 
+
+*Advantages: This measurement gives the inforamtion about proportion.*
+
+*Disadvantages: This measurement makes the model less interpretable.*
+
+* The relative proportion, $D_i/(D_i+R_i)$.
+
+*Advantages: The total amount is taken into account. It gives us an idea of the influence of the percentage of $D_i$ in total amount.*
+
+*Disadvantages: This measurement makes the model difficult to explain.*
+
+### Transformation 
+
+For observed pair of $\mathrm{x}$ and $\mathrm{y}$, we fit a simple regression model 
+$$\mathrm{y}=\alpha + \beta \mathrm{x} + \mathrm{\epsilon}$$ 
+which results in estimates $\hat{\alpha}=1$, $\hat{\beta}=0.9$, $SE(\hat{\beta})=0.03$, $\hat{\sigma}=2$ and $r=0.3$.
+
+1. Suppose that the explanatory variable values in a regression are transformed according to the $\mathrm{x}^{\star}=\mathrm{x}-10$ and that $\mathrm{y}$ is regressed on $\mathrm{x}^{\star}$.  Without redoing the regression calculation in detail, find $\hat{\alpha}^{\star}$, $\hat{\beta}^{\star}$, $\hat{\sigma}^{\star}$, and $r^{\star}$.  What happens to these quantities when $\mathrm{x}^{\star}=10\mathrm{x}$ ? When $\mathrm{x}^{\star}=10(\mathrm{x}-1)$?
+
+
+2. Now suppose that the response variable scores are transformed according to the formula
+$\mathrm{y}^{\star\star}= \mathrm{y}+10$ and that $\mathrm{y}^{\star\star}$ is regressed on $\mathrm{x}$.  Without redoing the regression calculation in detail, find $\hat{\alpha}^{\star\star}$, $\hat{\beta}^{\star\star}$, $\hat{\sigma}^{\star\star}$, and $r^{\star\star}$.  What happens to these quantities when $\mathrm{y}^{\star\star}=5\mathrm{y}$ ? When $\mathrm{y}^{\star\star}=5(\mathrm{y}+2)$?
+
+
+3. In general, how are the results of a simple regression analysis affected by linear transformations of $\mathrm{y}$ and $\mathrm{x}$?
+
+*1> linear transformations of $\mathrm{x}$ do not affect $\epsilon$ and $R^2$*
+
+*$\mathrm{x}+c$ will result in the intercept change to $\hat{\alpha}-c\hat{\beta}$, but $\hat{\beta}$ do not change.*
+
+*$\mathrm{x} \cdot d$ will result in the $\hat{\beta}$ change to $\hat{\beta}/d$, but $\hat{\alpha}$ do not change.*
+
+*2> linear transformations of $\mathrm{y}$ do not affect $R^2$, but affect $\epsilon$.*
+
+*$\mathrm{y}+c$ will result in the intercept change to $\hat{\alpha}+c$, but $\hat{\beta}$ do not change.*
+
+*$\mathrm{y} \cdot d$ will result in the $\hat{\alpha}$ change to $\hat{\alpha} \cdot d$, and $\hat{\beta}$ will change to $\hat{\beta} \cdot d$,and $\hat{\sigma}$ will change to $\hat{\sigma} \cdot d$*
+
+4. Suppose that the explanatory variable values in a regression are transformed according to the $\mathrm{x}^{\star}=10(\mathrm{x}-1)$ and that $\mathrm{y}$ is regressed on $\mathrm{x}^{\star}$.  Without redoing the regression calculation in detail, find $SE(\hat{\beta}^{\star})$ and $t^{\star}_0= \hat{\beta}^{\star}/SE(\hat{\beta}^{\star})$.
+
+$SE(\hat{\beta^*})=SE(\hat{\beta})/10=0.003$
+
+$\hat{\beta^*}=\hat{\beta}/10=0.09$
+
+$t_0^*=t_0=30$
+
+5. Now suppose that the response variable scores are transformed according to the formula
+$\mathrm{y}^{\star\star}=5(\mathrm{y}+2)$ and that $\mathrm{y}^{\star\star}$ is regressed on $\mathrm{x}$.  Without redoing the regression calculation in detail, find $SE(\hat{\beta}^{\star\star})$ and $t^{\star\star}_0= \hat{\beta}^{\star\star}/SE(\hat{\beta}^{\star\star})$.
+
+$\hat{\beta^{**}}=5\hat{\beta}=4.5$
+
+$SE(\hat{\beta^})=5SE(\hat{\beta})=0.15$
+
+$t_0^{**}=t_0=30$
+
+6. In general, how are the hypothesis tests and confidence intervals for $\beta$ affected by linear transformations of $\mathrm{y}$ and $\mathrm{x}$?
+
+1> In hypothesis test, $H_0$:$\mu=0$, $H_1$:$\mu\neq0$
+
+$t=\frac{\bar{\beta}}{SE(\beta)}$~$t(n-1)$
+
+According to the conclusion in last question, We can say that  linear transformations on x or y will not change t value so that they will not change the result of test.
+
+2> confidence intervals
+
+$\frac{\bar{\beta}-\mu_0}{SE(\beta)}$~$t(n-1)$
+
+Confidence Interval is $[\bar{\beta}-t_{\alpha/2}*SE(\beta),\bar{\beta}+t_{\alpha/2}*SE(\beta)]$
+
+If $x^=cx$, then $\bar{\beta^*}=\bar{\beta}/c$, CI is $[\bar{\beta}/c-t_{\alpha/2}*SE(\beta)/c,\bar{\beta}/c+t_{\alpha/2}*SE(\beta)/c]$
+
+If $y^=dy$, then $\bar{\beta^*}=\bar{\beta}*d$, CI is $[\bar{\beta}*d-t_{\alpha/2}*SE(\beta)*d,\bar{\beta}*d+t_{\alpha/2}*SE(\beta)*d]$
+
+Therefore, the linear transformations will on x or y will change confidence intervals.
+
+# Feedback comments etc.
+
+If you have any comments about the homework, or the class, please write your feedback here.  We love to hear your opinions.
+
