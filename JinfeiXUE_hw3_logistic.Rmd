@@ -1,0 +1,528 @@
+---
+title: "Homework 03"
+author: "Jinfei Xue"
+date: "September 27, 2018"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+subtitle: Logistic Regression
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,dev="CairoPNG",fig.align = "center", 
+                      fig.width = 5.656, fig.height = 4, global.par = TRUE)
+#install.packages("pacman",repos="https://cloud.r-project.org")
+pacman::p_load("ggplot2","knitr","arm","foreign","car","Cairo","data.table","tidyverse","dplyr")
+par (mar=c(3,3,2,1), mgp=c(2,.7,0), tck=-.01)
+```
+
+# Data analysis 
+
+### 1992 presidential election
+
+The folder `nes` contains the survey data of presidential preference and income for the 1992 election analyzed in Section 5.1, along with other variables including sex, ethnicity, education, party identification, and political ideology.
+
+```{r, echo=FALSE}
+nes5200<-read.dta("http://www.stat.columbia.edu/~gelman/arm/examples/nes/nes5200_processed_voters_realideo.dta")
+#saveRDS(nes5200,"nes5200.rds")
+#nes5200<-readRDS("nes5200.rds")
+
+nes5200_dt <- data.table(nes5200)
+  yr <- 1992
+nes5200_dt_s<-nes5200_dt[ year==yr & presvote %in% c("1. democrat","2. republican")& !is.na(income)]
+nes5200_dt_s<-nes5200_dt_s[,vote_rep:=1*(presvote=="2. republican")]
+nes5200_dt_s$income <- droplevels(nes5200_dt_s$income)
+```
+
+1.  Fit a logistic regression predicting support for Bush given all these inputs. Consider how to include these as regression predictors and also consider possible interactions.
+
+*income, female,race, educ1, partyid7 and c.ideo_feel are selected as predictors in the logistic regression model.*
+
+*We first deal with the data.*
+
+```{r}
+# Standardize "c.ideo_feel"
+nes5200_dt_s$c.ideo_feel <- 
+  (nes5200_dt_s$ideo_feel - mean(nes5200_dt_s$ideo_feel, na.rm=TRUE))/
+  sd(nes5200_dt_s$ideo_feel, na.rm=TRUE)
+
+# Transform to integer
+nes5200_dt_s$income <- as.integer(nes5200_dt_s$income)
+nes5200_dt_s$race <- as.integer(nes5200_dt_s$race)
+nes5200_dt_s$educ1 <- as.integer(nes5200_dt_s$educ1)
+nes5200_dt_s$partyid7 <- as.integer(nes5200_dt_s$partyid7)
+
+# Clean NA data
+library(dplyr)
+df <- nes5200_dt_s %>% 
+  select(vote_rep, income, female, race, educ1, partyid7, c.ideo_feel)
+df <- na.omit(df)
+map_dbl(df, ~ sum(is.na(.x)))
+```
+
+```{r}
+# Model 1
+r_1 <- glm(vote_rep ~ income + female + race + educ1 + partyid7 + c.ideo_feel, 
+           data=df, family=binomial(link="logit"))
+summary(r_1)
+coefplot(r_1)
+```
+
+*The regression result and coefplot show that most of coefficients are significant, but there still exist some non-significant coefficients and several coefficients are quite large. So, I will create another two models for comparison.*
+
+```{r}
+# Model 2
+r_2 <- glm(vote_rep ~ income + female + race + educ1 + partyid7 + 
+             c.ideo_feel + female*income, data=df, family=binomial(link="logit"))
+summary(r_2)
+coefplot(r_2)
+```
+
+*We can notice that the coefficient of interaction $female \cdot income$ is not significant. We also see that the coefficients of income, female, race and educ1 are not significant (p > 0.05).*
+
+```{r}
+# Model 3
+r_3 <- glm(vote_rep ~ income + female + race + educ1 + partyid7 + 
+             c.ideo_feel + female*race,
+           data=df, family=binomial(link="logit"))
+summary(r_3)
+coefplot(r_3)
+```
+
+*We can notice that the coefficient of interaction $female \cdot race$ is significant.*
+
+2. Evaluate and compare the different models you have fit. Consider coefficient estimates and standard errors, residual plots, and deviances.
+
+*1) First compare models based on coefficient estimates and standard errors*
+
+*The value of coefficient devided by its standard errors is corresponding z-value. And if p-value of z-value is smaller than 0.05, we can say the coefficient is significant.*
+
+*The three regression results show that all of three models exist non-significant coefficients. But What is noteworthy is that the interaction $female \cdot race$ in Model 3 is significant.*
+
+*2) Then compare residual plots*
+
+```{r}
+#Model 1
+binnedplot(fitted(r_1),resid(r_1,type="response"))
+#Model 2
+binnedplot(fitted(r_2),resid(r_2,type="response"))
+#Model 3
+binnedplot(fitted(r_3),resid(r_3,type="response"))
+```
+
+*From three plots, we can see Obviously there are some bad signs in the first and second plots: many points fall outside the confidence bands. But most of the points in the third plot fall into the confidence bands.*
+
+*3) Compare deviances*
+
+*Deviance is a measure of error; lower deviance means better fit to data. In regression results, both the value of Residual deviance and AIC is smallest in the three models discusses above.*
+
+*In summary, based on the above comparison and discussion, we can draw a conclusion that the third logistic model fit the data best.*
+
+3. For your chosen model, discuss and compare the importance of each input variable in the prediction.
+
+*My chosen model is:*
+
+$logit(P)=log(\frac{P}{1-P})=-4.88656-0.07744income-0.48970female-0.30405race+0.05110educ1+0.96916partyid7+1.50473c.ideo_feel+0.64281female*race+\epsilon$
+
+*intercept: A male with catagory of income,race,educ1,partyid7 and real_ideo equal to 0 would have log odds of -4.88656 to vote for George W. Bush.*
+
+*coefficient of income: With the same level of all the rest variables, when income level increases by 1, then the expected value of the voter's log odds of support for Bush would decrease by 0.07744 unit.*
+
+*coefficient of female: With the same level of all the rest variables, when race level=0, the expected difference between male voter's log odds of support for Bush and female voter's is 0.48970 unit.*
+
+*coefficient of race: With the same level of all the rest variables, when race level increases by 1, the expected value of male voter's log odds of support for Bush decrease by 0.30405 unit.*
+
+*coefficient of educ1: With the same level of all the rest variables, when educ1 level increases by 1, then the expected value of the voter's log odds of support for Bush would increase by 0.05110 unit.*
+
+*coefficient of partyid7 : With the same level of all the rest variables, when partyid7 level increases by 1, then the expected value of the voter's log odds of support for Bush would increase by 0.96916 unit.*
+
+*coefficient of c.ideo_feel : With the same level of all the rest variables, when c.ideo_feel increases by 1, then the expected value of the voter's log odds of support for Bush would increase by 1.50473 unit.*
+
+*female:race: With the same level of all the rest variables, for each additional level of race, the value 0.64281 is added to the coefficient for female.*
+
+### Graphing logistic regressions: 
+
+the well-switching data described in Section 5.4 of the Gelman and Hill are in the folder `arsenic`.  
+
+```{r, echo=FALSE}
+wells <- read.table("http://www.stat.columbia.edu/~gelman/arm/examples/arsenic/wells.dat", header=TRUE)
+wells_dt <- data.table(wells)
+```
+
+1. Fit a logistic regression for the probability of switching using log (distance to nearest safe well) as a predictor.
+```{r}
+wells_dt<-data.frame(wells_dt,log.dist=log(wells_dt$dist))
+r_1 <- glm (switch ~ log.dist, data = wells_dt, family=binomial(link="logit"))
+summary(r_1)
+```
+
+*According to the regression result, the logistic regression model is*
+
+$logit(P(switch=1))=log(\frac{P}{1-P})=1.01971-0.20044log(dist)+\epsilon$
+
+2. Make a graph similar to Figure 5.9 of the Gelman and Hill displaying Pr(switch) as a function of distance to nearest safe well, along with the data.
+
+*In preparing to plot the data, we first create a function to jitter the binary outcome while keeping the points between 0 and 1:*
+
+```{r}
+jitter.binary <- function(a, jitt=.05){
+  ifelse (a==0, runif (length(a), 0, jitt), runif (length(a), 1-jitt, 1))
+}
+# graph the data and fitted model
+switch.jitter <- jitter.binary (wells_dt$switch) 
+plot (wells_dt$log.dist, switch.jitter)
+curve (invlogit (coef(r_1) [1] + coef(r_1) [2]*x), add=TRUE)
+```
+
+*From the plot, we can conclude that the probability of switching is higher for people who live closer to a safe well.*
+
+3. Make a residual plot and binned residual plot as in Figure 5.13.
+
+```{r}
+plot(fitted(r_1),resid(r_1))
+abline(h=0,lty=3)
+binnedplot(fitted(r_1),resid(r_1,type="response"))
+```
+
+4. Compute the error rate of the fitted model and compare to the error rate of the null model.
+
+```{r}
+fitted <- fitted(r_1)
+wells_dt<-data.frame(wells_dt,fitted)
+error.rate <- mean ((wells_dt$fitted>0.5 & wells_dt$switch==0) | (wells_dt$fitted<0.5 & wells_dt$switch==1))
+error.rate
+```
+
+*the error rate of the fitted model is 0.4192053.*
+
+```{r}
+r_2<-glm(switch~1,data=wells_dt,family=binomial)
+fitted_2 <- fitted(r_2)
+wells_dt<-data.frame(wells_dt,fitted_2)
+error.rate_2 <- mean ((wells_dt$fitted_2>0.5 & wells_dt$switch==0) | (wells_dt$fitted_2<0.5 & wells_dt$switch==1))
+error.rate_2
+```
+
+*the error rate of the null model is 0.4248344.*
+
+*We can notice that the error rate of the fitted model is smaller than the error rate of the null model.*
+
+5. Create indicator variables corresponding to `dist < 100`, `100 =< dist < 200`, and `dist > 200`. Fit a logistic regression for Pr(switch) using these indicators. With this new model, repeat the computations and graphs for part (1) of this exercise.
+
+```{r}
+indicator = 100
+# dist < 100
+indicator[wells_dt$dist < 100] = 1
+# 100 =< dist < 200
+indicator[100 <= wells_dt$dist & wells_dt$dist < 200]= 2
+# dist > 200
+indicator[wells_dt$dist > 200] = 3
+# Creat a new logistic regression model
+r_new <- glm(switch ~ factor(indicator), data=wells_dt, family=binomial)
+summary(r_new)
+# Graph the data and fitted model
+plot (factor(indicator), switch.jitter)
+curve (invlogit (coef(r_new) [1] + coef(r_new) [2]*x), add=TRUE)
+# Make a residual plot and binned residual plot
+plot(fitted(r_new),resid(r_new))
+abline(h=0,lty=3)
+binnedplot(fitted(r_new),resid(r_new,type="response"))
+```
+
+### Model building and comparison: 
+continue with the well-switching data described in the previous exercise.
+
+1. Fit a logistic regression for the probability of switching using, as predictors, distance, `log(arsenic)`, and their interaction. Interpret the estimated coefficients and their standard errors.
+
+```{r}
+r_3 <- glm(switch ~ dist + log(arsenic) + dist*log(arsenic), 
+           data = wells_dt, family = binomial(link = "logit"))
+summary(r_3)
+```
+
+*According to the regression results, the logistic regression model is:*
+
+$logit(P(switch=1))=log(\frac{P}{1-P})=0.491350-0.008735dist+0.983414log(arsenic)-0.002309dist \cdot log(arsenic)+\epsilon$
+
+*1) Constant term: $logit^-1 (0.491350) = 0.6204244$ is the estimated probability of switching, if dist = log(arsenic) = 0.*
+
+*2) Coefficient for distance: With the same level of arsenic, when distance increases by 1 unit, then the expected value of the switching¡¯s log odds would decrease by 0.008735 unit.*
+
+*3) Coefficient for log(arsenic): If the distance to the nearest safe well is 0, then when we change log(arsenic) by 1 unit, we¡¯d expect switch variable to change by 98.3414 percent.*
+
+*4) Coefficient for the interaction term: this can be interpreted in two ways.*
+
+*Looking from one direction, for each additional unit of log(arsenic), the value -0.002309 is added to the coefficient for distance.*
+
+*Looking at it the other way, for each additional unit of distance to the nearest well, the value -0.002309 is added to the coefficient for log(arsenic).*
+
+2. Make graphs as in Figure 5.12 to show the relation between probability of switching, distance, and arsenic level.
+
+```{r}
+# the relation between probability of switching and distance
+plot(wells_dt$dist, switch.jitter, xlim = c(0, max(wells_dt$dist)))
+curve(invlogit(cbind(1, x, .5, .5*x) %*% coef(r_3)), add= TRUE)
+curve(invlogit(cbind(1, x, 1, 1*x) %*% coef(r_3)), add= TRUE)
+# the relation between probability of switching and arsenic
+plot(log(wells_dt$arsenic), switch.jitter, xlim = c(0, max(log(wells_dt$arsenic))))
+curve(invlogit(cbind(1, 0, x, 0*x) %*% coef(r_3)), add= TRUE)
+curve(invlogit(cbind(1, 50, x, 50*x) %*% coef(r_3)), add= TRUE)
+```
+
+3. Following the procedure described in Section 5.7, compute the average predictive differences corresponding to:
+
+i. A comparison of dist = 0 to dist = 100, with arsenic held constant. 
+
+*The predictive difference in probability of switching between these two households is:*
+
+$\delta(arsenic) = logit^{-1} (0.491350-0.008735 \cdot 100 + 0.983414 \cdot log(arsenic)-0.002309 \cdot 100 \cdot log(arsenic)-logit^{-1} (0.491350-0.008735 \cdot 0 + 0.983414 \cdot log(arsenic)-0.002309 \cdot 0 \cdot log(arsenic)$
+
+*The average predictive difference:*
+
+$\frac{1}{n}\sum_{i=1}^{n}\delta(arsenic)$
+
+```{r}
+b <- coef (r_3) 
+arsenic<-wells_dt$arsenic
+hi <- 100
+lo <- 0
+delta_1 <- invlogit (b[1] + b[2]*hi + b[3] *log(arsenic) + b[4]*hi*log(arsenic)) - invlogit (b [1] + b[2]*lo + b [3] * log(arsenic) + b[4]*lo*log(arsenic)) 
+print (mean (delta_1))
+```
+
+*So the average predictive differences corresponding to a comparison of dist = 0 to dist = 100, with arsenic held constant, is -0.2113356.*
+
+ii. A comparison of dist = 100 to dist = 200, with arsenic held constant.
+
+```{r}
+hi <- 200
+lo <- 100
+delta_2 <- invlogit (b[1] + b[2]*hi + b[3] *log(arsenic) + b[4]*hi*log(arsenic)) - invlogit (b [1] + b[2]*lo + b [3] * log(arsenic) + b[4]*lo*log(arsenic)) 
+print (mean (delta_1))
+```
+
+*So the average predictive differences corresponding to a comparison of dist = 100 to dist = 200, with arsenic held constant, is -0.2113356, which is same as that in i.*
+
+iii. A comparison of arsenic = 0.5 to arsenic = 1.0, with dist held constant. 
+
+*The predictive difference in probability of switching between these two households is:*
+
+$\delta(dist) = logit^{-1} (0.491350-0.008735 \cdot dist + 0.983414 \cdot log(1.0)-0.002309 \cdot dist \cdot log(1.0)-logit^{-1} (0.491350-0.008735 \cdot dist + 0.983414 \cdot log(0.5)-0.002309 \cdot 0 \cdot log(0.5)$
+
+*The average predictive difference:*
+
+$\frac{1}{n}\sum_{i=1}^{n}\delta(dist)$
+
+```{r}
+dist<-wells_dt$dist
+hi <- 1.0
+lo <- 0.5
+delta_3 <- invlogit (b[1] + b[2]*dist + b[3] *log(hi) + b[4]*dist*log(hi)) - invlogit (b[1] + b[2]*dist + b[3] *log(lo) + b[4]*dist*log(lo)) 
+print (mean (delta_3))
+```
+
+*So the average predictive differences corresponding to a comparison of arsenic = 0.5 to arsenic = 1.0, with dist held constant, is 0.1460174.*
+
+iv. A comparison of arsenic = 1.0 to arsenic = 2.0, with dist held constant.
+Discuss these results.
+
+```{r}
+hi <- 2.0
+lo <- 1.0
+delta_4 <- invlogit (b[1] + b[2]*dist + b[3] *log(hi) + b[4]*dist*log(hi)) - invlogit (b[1] + b[2]*dist + b[3] *log(lo) + b[4]*dist*log(lo)) 
+print (mean (delta_4))
+```
+
+*So the average predictive differences corresponding to a comparison of arsenic = 1.0 to arsenic = 2.0, with dist held constant, is 0.1404344, which is different from that in iii.*
+
+### Building a logistic regression model: 
+the folder rodents contains data on rodents in a sample of New York City apartments.
+
+Please read for the data details.
+http://www.stat.columbia.edu/~gelman/arm/examples/rodents/rodents.doc
+
+```{r read_rodent_data, echo=FALSE}
+apt.subset.data <- read.table ("http://www.stat.columbia.edu/~gelman/arm/examples/rodents/apt.subset.dat", header=TRUE)
+apt_dt <- data.table(apt.subset.data)
+setnames(apt_dt, colnames(apt_dt),c("y","defects","poor","race","floor","dist","bldg")
+)
+invisible(apt_dt[,asian := race==5 | race==6 | race==7])
+invisible(apt_dt[,black := race==2])
+invisible(apt_dt[,hisp  := race==3 | race==4])
+
+```
+
+1. Build a logistic regression model to predict the presence of rodents (the variable y in the dataset) given indicators for the ethnic groups (race). Combine categories as appropriate. Discuss the estimated coefficients in the model.
+
+```{r}
+# Combine categories
+apt_dt$race_comb<- "other"
+apt_dt$race_comb[apt_dt$asian]<-"asian"
+apt_dt$race_comb[apt_dt$black]<-"black"
+apt_dt$race_comb[apt_dt$hisp]<-"hisp"
+apt_dt$race_comb<-factor(apt_dt$race_comb,levels=c("other","asian","black","hisp"))
+
+# Creat logistic regression model
+r_1 <- glm(y ~ asian + black + hisp, data = apt_dt, family = binomial(link = "logit"))
+display(r_1)
+```
+
+*According to the regression results, the logistic regression model is:*
+
+$logit(P(y=1))=log(\frac{P}{1-P})=-2.15+0.55asianTRUE+1.54blackTRUE+1.70hispTRUE+\epsilon$
+
+*1) Constant term: $logit^-1 (-2.15) = 0.1043312$ is the expected probability of the presence of rodents, none of which are asian, black and hisp groups.*
+
+*2) Coefficient for asianTRUE: The expected difference between log odds of asian rodents' presense and that of other ethnic groups except asian, black and hisp groups is 0.55 units.*
+
+*3) Coefficient for blackTRUE: The expected difference between log odds of black rodents' presense and that of other ethnic groups except asian, black and hisp groups is 1.54 units.*
+
+*4) Coefficient for hispTRUE: The expected difference between log odds of hisp rodents' presense and that of other ethnic groups except asian, black and hisp groups is 1.70 units.*
+
+2. Add to your model some other potentially relevant predictors describing the apartment, building, and community district. Build your model using the general principles explained in Section 4.6 of the Gelman and Hill. Discuss the coefficients for the ethnicity indicators in your model.
+
+```{r}
+r_2 <- glm(y ~ defects + poor + floor + asian + black + hisp, data = apt_dt, family = binomial(link = "logit"))
+display(r_2)
+```
+
+*According to the regression results, the logistic regression model is:*
+
+$logit(P(y=1))=log(\frac{P}{1-P})=-3.02+0.47defects+0.17poor-0.01floor+0.40asianTRUE+1.14blackTRUE+1.29hispTRUE+\epsilon$
+
+*1) Coefficient for asianTRUE: With the same level of other variables, the expected difference between log odds of asian rodents' presense and that of other ethnic groups except asian, black and hisp groups is 0.40 units.*
+
+*2) Coefficient for blackTRUE: With the same level of other variables, the expected difference between log odds of black rodents' presense and that of other ethnic groups except asian, black and hisp groups is 1.14 units.*
+
+*3) Coefficient for hispTRUE: With the same level of other variables, the expected difference between log odds of hisp rodents' presense and that of other ethnic groups except asian, black and hisp groups is 1.29 units.*
+
+# Conceptual exercises.
+
+### Shape of the inverse logit curve
+
+Without using a computer, sketch the following logistic regression lines:
+
+1. $Pr(y = 1) = logit^{-1}(x)$
+2. $Pr(y = 1) = logit^{-1}(2 + x)$
+3. $Pr(y = 1) = logit^{-1}(2x)$
+4. $Pr(y = 1) = logit^{-1}(2 + 2x)$
+5. $Pr(y = 1) = logit^{-1}(-2x)$
+
+### Score and Pass
+In a class of 50 students, a logistic regression is performed of course grade (pass or fail) on midterm exam score (continuous values with mean 60 and standard deviation 15). The fitted model is $Pr(pass) = logit^{-1}(-24+0.4x)$.
+
+1. Graph the fitted model. Also on this graph put a scatterplot of hypothetical data consistent with the information given.
+
+```{r}
+score <- rnorm(50, mean=60, sd = 15)
+p_pass <- invlogit(-24 + 0.4*score)
+pass <- ifelse(p_pass>.5,1,0)
+ggplot(data.frame(score, pass), aes(x=score, y = pass)) +
+  geom_point() +
+  stat_function(fun=function(x) invlogit(-24 + 0.4 * x)) +
+  labs(x="midterm exam score", y="Probability of Pass") 
+```
+
+2. Suppose the midterm scores were transformed to have a mean of 0 and standard deviation of 1. What would be the equation of the logistic regression using these transformed scores as a predictor?
+
+*The midterm scores were transformed to have a mean of 0 and standard deviation of 1, which means $$z.score = (score-60)/15$$. So, $$score=15z.score+60$$ can be substituted by z.score in the equation.*
+
+*So we have $$Pr(pass) = logit^{-1}(6x)$$ after transformation.*
+
+3. Create a new predictor that is pure noise (for example, in R you can create `newpred <- rnorm (n,0,1)`). Add it to your model. How much does the deviance decrease?
+
+```{r}
+newpred <- rnorm(50,0,1)
+deviance(glm(p_pass ~ score , family = binomial(link = "logit")))-deviance(glm(p_pass ~ score + newpred, family = binomial(link = "logit")))
+
+
+```
+
+### Logistic regression
+
+You are interested in how well the combined earnings of the parents in a child's family predicts high school graduation. You are told that the probability a child graduates from high school is 27% for children whose parents earn no income and is 88% for children whose parents earn $60,000. Determine the logistic regression model that is consistent with this information. (For simplicity you may want to assume that income is measured in units of $10,000).
+
+```{r}
+beta_0 <- logit(0.27)
+beta_1 <- (logit(0.88) - beta_0)/6
+ggplot(data.frame(x=c(0, 6)), aes(x)) + 
+  stat_function(fun=function(x) invlogit(beta_0+beta_1* x)) + 
+  labs(x="earnings in $10,000", y="probability of graduate from high school")
+```
+
+*According to the given information, we have intercept: $\beta_0=logit(0.27) = -0.9946$ , coefficient for the earings in units of $10,000 is: $\beta_1=(logit(0.88)- logit(0.27))/6 = 0.4978$*.
+
+*So we have the logistic regression model: *
+$Pr(graduation from high school) = logit^{-1}( -0.9946 + 0.4978 * parents'earning)$
+
+### Latent-data formulation of the logistic model: 
+take the model $Pr(y = 1) = logit^{-1}(1 + 2x_1 + 3x_2)$ and consider a person for whom $x_1 = 1$ and $x_2 = 0.5$. Sketch the distribution of the latent data for this person. Figure out the probability that $y=1$ for the person and shade the corresponding area on your graph.
+
+```{r}
+epsilon<-rlogis(1000,0,1)
+z_latent<- 1 + 2*1 + 3*0.5 + epsilon
+density = dlogis(z_latent)
+data<-data.frame(cbind(epsilon,z_latent,density))
+ggplot(data = data, mapping = aes(x=z_latent,y=density)) +
+    geom_line()+
+    geom_area(mapping = aes(x = ifelse(z_latent>0, z_latent, 0)), fill = "red")
+```
+
+### Limitations of logistic regression: 
+
+consider a dataset with $n = 20$ points, a single predictor x that takes on the values $1, \dots , 20$, and binary data $y$. Construct data values $y_{1}, \dots, y_{20}$ that are inconsistent with any logistic regression on $x$. Fit a logistic regression to these data, plot the data and fitted curve, and explain why you can say that the model does not fit the data.
+
+```{r}
+x <- c(1:20)
+y <- rep(0,20)
+r_lim <- glm(y ~ x)
+ggplot(data.frame(x,y), aes(x=x, y = y)) +
+  geom_point(color="red") +
+  stat_function(fun=function(x) invlogit(coef(r_lim)[1] + coef(r_lim)[2] * x)) +
+  labs(x="x", y="y") 
+```
+
+*We can see when there are some extreme situation, the logistic model can not handle and will make big mistakesthe model does not fit the data. They are totally opposite.*
+
+### Identifiability: 
+
+the folder nes has data from the National Election Studies that were used in Section 5.1 of the Gelman and Hill to model vote preferences given income. When we try to fit a similar model using ethnicity as a predictor, we run into a problem. Here are fits from 1960, 1964, 1968, and 1972:
+
+```{r, echo=FALSE}
+nes5200_dt_d<-nes5200_dt[ presvote %in% c("1. democrat","2. republican")& !is.na(income)]
+nes5200_dt_d<-nes5200_dt_d[,vote_rep:=1*(presvote=="2. republican")]
+nes5200_dt_d$income <- droplevels(nes5200_dt_d$income)
+
+nes5200_dt_d$income <- as.integer(nes5200_dt_d$income)
+display(glm(vote_rep ~ female + black + income, data=nes5200_dt_d, family=binomial(link="logit"), subset=(year==1960)))
+display(glm(vote_rep ~ female + black + income, data=nes5200_dt_d, family=binomial(link="logit"), subset=(year==1964)))
+display(glm(vote_rep ~ female + black + income, data=nes5200_dt_d, family=binomial(link="logit"), subset=(year==1968)))
+display(glm(vote_rep ~ female + black + income, data=nes5200_dt_d, family=binomial(link="logit"), subset=(year==1972)))
+
+```
+
+What happened with the coefficient of black in 1964? Take a look at the data and figure out where this extreme estimate came from. What can be done to fit the model in 1964?
+
+```{r}
+nes <- nes5200_dt_d %>%
+  select(vote_rep, year, female, black, income) %>%
+  subset( year%in% c(1960, 1964, 1968, 1972) & !is.na(black)) 
+nes$vote_rep <- factor(nes$vote_rep)
+nes$female <- factor(nes$female, label=c("MALE","FEMALE"))
+nes$black <- factor(nes$black, labels = c("NO-BLACK", "BLACK"))
+
+str(nes)
+ggplot(nes)+
+  aes(x=black,y=vote_rep,color=vote_rep)+geom_jitter()+
+  facet_grid(.~year)+scale_color_manual(values=c("blue","red"))+
+  ylab("")+xlab("")
+```
+
+*In 1964 there was no black Republican vote.And what we can do is not considering black population when creating a subset.*
+
+# Feedback comments etc.
+
+If you have any comments about the homework, or the class, please write your feedback here.  We love to hear your opinions.
+
