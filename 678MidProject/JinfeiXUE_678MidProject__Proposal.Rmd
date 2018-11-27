@@ -1,0 +1,313 @@
+---
+title: "Midterm Project Proposal"
+author: "Jinfei Xue"
+date: "12 November, 2018"
+output:
+  html_document:
+    df_print: paged
+  word_document: default
+subtitle: Black Friday Analysis
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lme4)
+```
+
+
+# 1 Introduction
+
+The dataset is a sample of the transactions made in a retail store during Black Friday. The store wants to know better the customer purchase behaviour against different products. Specifically, here the problem is a regression problem where we are trying to predict the dependent variable (the amount of purchase) with the help of the information contained in the other variables.
+
+Classification problem can also be settled in this dataset since several variables are categorical, and some other approaches could be "Predicting the age of the consumer" or even "Predict the category of goods bought". This dataset is also particularly convenient for clustering and maybe find different clusters of consumers within it.
+
+# 2 Data
+
+This dataset has 550,000 observations and 12 variables, and the main variables are:
+
+- User_ID (as group)
+
+- Gender (M/F)
+
+- Age (Age in bins)
+
+- Occupation (0, 1, ..., 20)
+
+- City_Category (A/B/C)
+
+- Stay_In_Current_City_Years (the number of years stay in current city)
+
+- Marital_Status (0/1)
+
+- Product_Category_1 (the number of bought products in category 1)
+
+- Product_Category_2 (the number of bought products in category 2)
+
+- Product_Category_3 (the number of bought products in category 3)
+
+- Purchase (Purchase amount in dollars)
+
+## 2.1 Dataset{.tabset .tabset-fade .tabset-pills}
+
+```{r, message = FALSE, echo = FALSE} 
+#input data
+bf <- read.csv("BlackFriday.csv")
+
+#print head data
+head(bf)
+```
+
+## 2.2 Data Structure{.tabset .tabset-fade .tabset-pills}
+```{r, message = FALSE, echo = FALSE} 
+#data structure
+glimpse(bf)
+bf$Occupation <- as.factor(bf$Occupation)
+#unique(bf$Occupation)
+summary(bf)
+```
+
+```{r}
+# replace NA with zero
+sapply(bf, function(x) sum(is.na(x)))
+bf[is.na(bf)] <- 0
+```
+
+
+# 3 Exploratory Data Analysis
+
+## 3.1 Total purchase distribution
+
+```{r}
+#total purchaser
+bf %>%
+  select(User_ID) %>%
+  unique() %>%
+  nrow() %>%
+  paste("buyers registered at Black Friday")
+```
+
+```{r}
+bf1 <- bf %>% 
+  group_by(User_ID) %>%
+  summarise(total_purchase = sum(Purchase))
+summary(bf1$total_purchase)
+
+ggplot(data = bf1, aes(x = total_purchase)) + 
+  geom_histogram(col = 'black', fill = 'blue', binwidth = 300000, center = 150000) +
+  labs(x = 'Dollars', y = 'the Number of Buyers', 
+       title = "Figure3.1 Distribution of total purchasing by buyers") + 
+  scale_y_continuous(limits = c(0,2000), breaks = c(0,500,1000,1500,2000)) + 
+  scale_x_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+## 3.2 Total number in each product category by gender
+
+```{r}
+bf2 <- bf %>%
+  group_by(Gender) %>%
+  summarise(Product_Category_1 = sum(Product_Category_1), 
+            Product_Category_2 = sum(Product_Category_2), 
+            Product_Category_3 = sum(Product_Category_3)) %>% 
+  gather(key = Product_Category, value = total_number,
+         Product_Category_1,Product_Category_2,Product_Category_3)
+
+ggplot(data = bf2, aes(x=Product_Category, y = total_number,fill = Gender)) +
+  geom_col() +
+  labs(x = 'Product Category', y = 'Total Number (units)', 
+       title = "Figure3.2 Total number in each product category by gender") + 
+  guides(fill=guide_legend(title = "Gender")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+We can see the product category 2 is most popular in the retail store.
+
+## 3.3 Total purchasing in each city by gender
+
+```{r}
+bf3 <- bf %>%
+  group_by(City_Category, Gender) %>%
+  summarise(total_purchase = sum(Purchase))
+
+ggplot(data = bf3, aes(x=City_Category, y = total_purchase, fill = Gender)) +
+  geom_col() +
+  labs(x = 'City Category', y = 'Total Purchase (dollars)', 
+       title = "Figure3.3 Total purchasing in each city by gender") + 
+  guides(fill=guide_legend(title = "Gender")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+
+## 3.4 Purchasing in each age range by marital status
+From the above data visualization,we find that men are morely to buy,so there comes our next question:men of what age will spend more money.Let's find out.
+```{r, message=FALSE, warning=FALSE}
+bf_age <- bf %>% 
+  separate(Age,c("aa","bb")) %>% 
+  mutate(aa=as.numeric(aa),bb=as.numeric(bb)) %>% 
+  mutate(Age=(aa+bb)/2) %>% 
+  select(-c(aa,bb))
+
+bf4_1 <- bf_age %>% 
+  mutate(age_range=case_when(Age <= 18 ~"Young",Age > 18 & Age <= 35 ~ "Mature",
+                             Age > 35 & Age < 55 ~ "Middle-aged"))
+bf4_1$age_range<-ifelse(is.na(bf4_1$age_range),"Old",bf4_1$age_range)
+bf4_1$age_range<-factor(bf4_1$age_range, levels = c("Young", "Mature", "Middle-aged", "Old"))
+
+attach(bf4_1)
+bf4_1$Marital_Status[Marital_Status == 0] <- "Unmarried"
+bf4_1$Marital_Status[Marital_Status == 1] <- "Married"
+
+bf4_2 <- bf4_1 %>%
+  group_by(age_range, Marital_Status) %>%
+  summarise(total_purchase = sum(Purchase))
+```
+
+```{r}
+ggplot(data = bf4_2, aes(x=age_range, y = total_purchase, fill = Marital_Status)) +
+  geom_col() +
+  labs(x = 'Age Range', y = 'Total Purchase (dollars)', 
+       title = "Figure3.4 Total purchasing in each age range by marital status") + 
+  guides(fill=guide_legend(title = "Marital Status")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+
+```
+
+
+```{r}
+p1<-bf4_1 %>% 
+  filter(Gender=="M") %>% 
+  group_by(age_range,Marital_Status) %>% 
+  summarise(purchase=median(Purchase)) %>%
+  ggplot(aes(x=age_range,y=Marital_Status,fill=purchase))+
+  geom_tile()+
+  scale_fill_continuous(low="blue",high="red")+
+  labs(x = 'Age Range', y = 'Marital Status', 
+       title = "Figure3.4.1 Medium purchasing of male in each age range by marital status")
+  
+p2<-bf4_1 %>% 
+  filter(Gender=="F") %>% 
+  group_by(age_range,Marital_Status) %>% 
+  summarise(purchase=median(Purchase)) %>%
+  ggplot(aes(x=age_range,y=Marital_Status,fill=purchase))+
+  geom_tile()+
+  scale_fill_continuous(low="blue",high="red")+
+  labs(x = 'Age Range', y = 'Marital Status', 
+       title = "Figure3.4.2 Medium purchasing of female in each age range by marital status")
+
+gridExtra::grid.arrange(p1,p2)
+```
+
+## 3.5 Purchasing in each age range by city category
+
+```{r}
+bf5 <- bf4_1 %>%
+  group_by(age_range, City_Category) %>%
+  summarise(total_purchase = sum(Purchase))
+
+  
+ggplot(data = bf5, aes(x=age_range, y = total_purchase, fill = City_Category)) +
+  geom_col() +
+  labs(x = 'Age', y = 'Total Purchase (dollars)', 
+       title = "Figure3.5 Total purchasing in each age range by city category") + 
+  guides(fill=guide_legend(title = "City Category")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+```{r}
+p3<-bf4_1 %>% 
+  filter(Gender=="M") %>% 
+  group_by(age_range,City_Category) %>% 
+  summarise(purchase=median(Purchase)) %>%
+  ggplot(aes(x=age_range,y=City_Category,fill=purchase))+
+  geom_tile()+
+  scale_fill_continuous(low="blue",high="red")+
+  labs(x = 'Age Range', y = 'City Category', 
+       title = "Figure3.5.1 Medium purchasing of male in each age range by city category")
+
+p4<-bf4_1 %>% 
+  filter(Gender=="F") %>% 
+  group_by(age_range,City_Category) %>% 
+  summarise(purchase=median(Purchase)) %>%
+  ggplot(aes(x=age_range,y=City_Category,fill=purchase))+
+  geom_tile()+
+  scale_fill_continuous(low="blue",high="red")+
+  labs(x = 'Age Range', y = 'City Category', 
+       title = "Figure3.5.2 Medium purchasing of female in each age range by city category")
+
+gridExtra::grid.arrange(p3,p4)
+```
+
+## 3.6 Toal purchasing in each occupation by city category
+
+```{r}
+bf6 <- bf %>%
+  group_by(City_Category, Occupation) %>%
+  summarise(total_purchase = sum(Purchase))
+
+ggplot(data = bf6, aes(x=Occupation, y = total_purchase, fill = City_Category)) +
+  geom_col() +
+  labs(x = 'Occupation', y = 'Total Purchase (dollars)', 
+       title = "Figure3.6 Toal purchasing in each occupation by city category") + 
+  guides(fill=guide_legend(title = "City Category")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+## 3.7 Toal purchasing in each occupation by city category
+
+```{r}
+bf7 <- bf %>%
+  group_by(City_Category, Stay_In_Current_City_Years) %>%
+  summarise(total_purchase = sum(Purchase))
+
+ggplot(data = bf7, aes(x=Stay_In_Current_City_Years, y = total_purchase, fill = City_Category)) +
+  geom_col() +
+  labs(x = 'Years of Staying in Current City (years)', y = 'Total Purchase (dollars)', 
+       title = "Figure3.7 Toal purchasing in each category of years of staying in current city by city category") + 
+  guides(fill=guide_legend(title = "City Category")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+# 4 Modeling and Prediction
+
+## 4.1 Modeling
+
+```{r}
+r1 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
+             Product_Category_3 + (1|User_ID), data = bf)
+summary(r1)
+```
+
+```{r}
+r2 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
+             Product_Category_3 + (1|User_ID), data = bf)
+summary(r2)
+```
+
+
+
+
+
+
+## 4.2 Model Checking
+
+```{r}
+
+```
+
+## 4.3 Prediction
+
+
+
+
+
+# 3 Objectives
+
+* Clean Data
+* Exploratory Data Analysis: *creating graphics*.
+* Modeling and Prediction: *using multilevel model, model checking and prediction*.
+* Assessment and Discussions: *assessing the limitations of the result and discussing future research directions*.
