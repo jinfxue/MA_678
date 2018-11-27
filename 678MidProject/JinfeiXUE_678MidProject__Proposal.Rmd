@@ -14,10 +14,12 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r, message=FALSE, warning=FALSE}
+#install.packages("randomForest")
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(lme4)
+library(randomForest)
 ```
 
 
@@ -76,6 +78,8 @@ summary(bf)
 # replace NA with zero
 sapply(bf, function(x) sum(is.na(x)))
 bf[is.na(bf)] <- 0
+#sum(is.na(bf))
+
 ```
 
 
@@ -274,7 +278,50 @@ ggplot(data = bf7, aes(x=Stay_In_Current_City_Years, y = total_purchase, fill = 
 
 # 4 Modeling and Prediction
 
+## 4.1 Predictors selection
+
+```{r}
+# library(Boruta)
+# boruta_output <- Boruta(total_delay~., data = train, doTrace = 2)
+# boruta_signif <- names(boruta_output$finalDecision[boruta_output$finalDecision %in% c("Confirmed", "Tentative")])
+# print(boruta_signif)
+# plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
+
+
+#Import the random forest library and fit a model
+library(randomForest)
+#+ Occupation + City_Category + Stay_In_Current_City_Years + Marital_Status
+rf = randomForest(Purchase ~ Gender + Age, data=bf)
+# Create an importance based on mean decreasing gini
+importance(fit_rf)
+ 
+# compare the feature importance with varImp() function
+varImp(fit_rf)
+ 
+# Create a plot of importance scores by random forest
+varImpPlot(fit_rf)
+```
+
+
+```{r}
+# Locate group level variables
+for (i in 2:5) {
+  
+}
+tt <- tapply(bf$Product_ID, bf$User_ID, 
+             function(x) {
+               length(unique(x))
+             })
+names(tt)[tt > 1]
+```
+
+
+
 ## 4.1 Modeling
+
+individual level variable: 
+
+group level variables: 
 
 ```{r}
 r1 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
@@ -289,6 +336,9 @@ summary(r2)
 ```
 
 
+```{r}
+#createDataPartition
+```
 
 
 
