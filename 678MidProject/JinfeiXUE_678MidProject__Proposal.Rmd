@@ -78,8 +78,6 @@ head(bf)
 ```{r, message = FALSE, echo = FALSE} 
 #data structure
 glimpse(bf)
-bf$Occupation <- as.factor(bf$Occupation)
-#unique(bf$Occupation)
 summary(bf)
 ```
 
@@ -87,8 +85,10 @@ summary(bf)
 # replace NA with zero
 sapply(bf, function(x) sum(is.na(x)))
 bf[is.na(bf)] <- 0
-#sum(is.na(bf))
+sum(is.na(bf))
 
+# Transfer "Occupation" to factor
+bf$Occupation <- as.factor(bf$Occupation)
 ```
 
 
@@ -107,8 +107,12 @@ bf %>%
 
 ```{r}
 bf1 <- bf %>% 
-  group_by(User_ID) %>%
-  summarise(total_purchase = sum(Purchase))
+  group_by(User_ID, Gender, Age, Occupation, City_Category, 
+           Stay_In_Current_City_Years, Marital_Status) %>%
+  summarise(total_Product_Category_1 = sum(Product_Category_1), 
+            total_Product_Category_2 = sum(Product_Category_2),
+            total_Product_Category_3 = sum(Product_Category_3),
+            total_purchase = sum(Purchase)) 
 summary(bf1$total_purchase)
 
 ggplot(data = bf1, aes(x = total_purchase)) + 
@@ -316,12 +320,13 @@ plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
 
 The predictors include "Gender", "Age", "Occupation", "City_Category", "Stay_In_Current_City_Years", "Marital_Status", "Product_Category_1", "Product_Category_2" and "Product_Category_3" and the response variable is "Purchase".
 
+
+
 ### 4.2.1 Linear regression model
 
 ```{r}
 bf$log.purchase <- log(bf$Purchase)
 bf1$log.total <- log(bf1$total_purchase)
-
 
 
 r1 <- lm(Purchase ~ Gender + Age + Occupation + City_Category + 
@@ -372,7 +377,7 @@ ggplot(bf) + aes(x=,y=Purchase,group=User_ID) +
 ```{r}
 r1 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
              Product_Category_3 + (1|User_ID), data = bf, REML=FALSE)
-display(r1)
+summary(r1)
 ```
 
 ### 4.2.3 Multilevel regression (varying slopes)
@@ -393,10 +398,10 @@ summary(r2)
 From figure(distribution), we can see the black friday purchase data has the 
 
 ```{r}
-bf$log.purchase <- log(bf$Purchase)
-bf1$log.total <- log(bf1$total_purchase)
-summary(bf$Purchase)
-summary(bf1$log.total)
+#bf$log.purchase <- log(bf$Purchase)
+#bf1$log.total <- log(bf1$total_purchase)
+#summary(bf$Purchase)
+#summary(bf1$log.total)
 
 ggplot(data = bf1, aes(x = log.total)) + 
   geom_histogram(col = 'black', fill = 'blue', binwidth = 0.05, center = 12) +
@@ -436,7 +441,41 @@ ggplot(data = bf, aes(x = Purchase)) +
 ## 4.3 Prediction
 
 
+# 5 Modeling and Prediction (for total_purchase)
 
+## 5.1 
+
+## 5.2 Modeling
+
+### 5.2.1 Linear regression model
+
+```{r}
+# Do the log transformation for "total_purchase"
+bf1$log.total <- log(bf1$total_purchase)
+summary(bf1$log.total)
+
+ggplot(data = bf1, aes(x = log.total)) + 
+  geom_histogram(col = 'black', fill = 'blue', binwidth = 0.05, center = 12) +
+  labs(x = 'Dollars', y = 'the Number of Buyers', 
+       title = "Figure5.1 Distribution of log(total_purchase) by buyers")
+```
+
+```{r}
+R1 <- lm(total_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + total_Product_Category_1 + 
+           total_Product_Category_2 + total_Product_Category_3, data = bf1)
+summary(R1)
+#chisq.test(bf1)
+```
+
+
+
+
+
+
+
+
+## 5.3 
 
 
 # 3 Objectives
