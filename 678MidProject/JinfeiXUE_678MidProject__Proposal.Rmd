@@ -18,6 +18,7 @@ knitr::opts_chunk$set(echo = TRUE)
 #install.packages("randomForest")
 #install.packages("maxLik")
 #install.packages("olsrr")
+
 library(dplyr)
 library(tidyr)
 library(ggplot2)
@@ -26,7 +27,8 @@ library(Boruta)
 #library(randomForest)
 library(maxLik)
 library(car) #vif
-library(olsrr)
+#library(olsrr) #ols_step_all_possible
+
 ```
 
 
@@ -317,14 +319,25 @@ The predictors include "Gender", "Age", "Occupation", "City_Category", "Stay_In_
 ### 4.2.1 Linear regression model
 
 ```{r}
+bf$log.purchase <- log(bf$Purchase)
+bf1$log.total <- log(bf1$total_purchase)
+
+
+
 r1 <- lm(Purchase ~ Gender + Age + Occupation + City_Category + 
            Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
            Product_Category_2 + Product_Category_3, data = bf)
 summary(r1)
-vif(r1)
-cor(bf[,8:11])
+#library(car)
+vif(r1) 
+
+
+#library(olsrr)
+#ols_step_all_possible(r1)
+
+
 plot(r1)
-#vif_func
+
 ```
 
 
@@ -382,7 +395,7 @@ From figure(distribution), we can see the black friday purchase data has the
 ```{r}
 bf$log.purchase <- log(bf$Purchase)
 bf1$log.total <- log(bf1$total_purchase)
-summary(bf$log.purchase)
+summary(bf$Purchase)
 summary(bf1$log.total)
 
 ggplot(data = bf1, aes(x = log.total)) + 
@@ -401,7 +414,7 @@ ggplot(data = bf1, aes(x = total_purchase)) +
 
 
 
-ggplot(data = bf, aes(x = log.purchase)) + 
+ggplot(data = bf, aes(x = Purchase)) + 
   geom_histogram(col = 'black', fill = 'blue', binwidth = 0.5, center = 8) +
   labs(x = 'Dollars', y = 'the Number of Buyers', 
        title = "Figure3.1 Distribution of total purchasing by buyers")
