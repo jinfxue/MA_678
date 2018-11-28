@@ -17,7 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 #install.packages("Boruta")
 #install.packages("randomForest")
 #install.packages("maxLik")
-
+#install.packages("olsrr")
 library(dplyr)
 library(tidyr)
 library(ggplot2)
@@ -25,6 +25,8 @@ library(lme4)
 library(Boruta)
 #library(randomForest)
 library(maxLik)
+library(car) #vif
+library(olsrr)
 ```
 
 
@@ -304,6 +306,35 @@ plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
 ```
 
 
+
+
+
+
+## 4.2 Modeling
+
+The predictors include "Gender", "Age", "Occupation", "City_Category", "Stay_In_Current_City_Years", "Marital_Status", "Product_Category_1", "Product_Category_2" and "Product_Category_3" and the response variable is "Purchase".
+
+### 4.2.1 Linear regression model
+
+```{r}
+r1 <- lm(Purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
+           Product_Category_2 + Product_Category_3, data = bf)
+summary(r1)
+vif(r1)
+cor(bf[,8:11])
+plot(r1)
+#vif_func
+```
+
+
+### 4.2.2 Multilevel regression (vary by intercept)
+individual level variable: 
+
+
+
+group level variables: 
+
 ```{r}
 # Locate group level variables
 for (i in 2:5) {
@@ -315,24 +346,6 @@ tt <- tapply(bf$Product_ID, bf$User_ID,
              })
 names(tt)[tt > 1]
 ```
-
-
-
-## 4.2 Modeling
-
-### 4.2.1 Linear regression model
-
-```{r}
-
-```
-
-
-### 4.2.2 Multilevel regression (vary by intercept)
-individual level variable: 
-
-
-
-group level variables: 
 
 ```{r}
 ggplot(bf) + aes(x=,y=Purchase,group=User_ID) + 
@@ -367,7 +380,34 @@ summary(r2)
 From figure(distribution), we can see the black friday purchase data has the 
 
 ```{r}
+bf$log.purchase <- log(bf$Purchase)
+bf1$log.total <- log(bf1$total_purchase)
+summary(bf$log.purchase)
+summary(bf1$log.total)
 
+ggplot(data = bf1, aes(x = log.total)) + 
+  geom_histogram(col = 'black', fill = 'blue', binwidth = 0.05, center = 12) +
+  labs(x = 'Dollars', y = 'the Number of Buyers', 
+       title = "Figure3.1 Distribution of total purchasing by buyers")
+
+
+ggplot(data = bf1, aes(x = total_purchase)) + 
+  geom_histogram(col = 'black', fill = 'blue', binwidth = 300000, center = 150000) +
+  labs(x = 'Dollars', y = 'the Number of Buyers', 
+       title = "Figure3.1 Distribution of total purchasing by buyers") + 
+  scale_y_continuous(limits = c(0,2000), breaks = c(0,500,1000,1500,2000)) + 
+  scale_x_continuous(labels = scales::comma) #prevent scientific number in x-axis
+
+
+
+
+ggplot(data = bf, aes(x = log.purchase)) + 
+  geom_histogram(col = 'black', fill = 'blue', binwidth = 0.5, center = 8) +
+  labs(x = 'Dollars', y = 'the Number of Buyers', 
+       title = "Figure3.1 Distribution of total purchasing by buyers")
+  + 
+  scale_y_continuous(limits = c(0,2000), breaks = c(0,500,1000,1500,2000)) + 
+  scale_x_continuous(labels = scales::comma))
 ```
 
 
