@@ -14,12 +14,17 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r, message=FALSE, warning=FALSE}
+#install.packages("Boruta")
 #install.packages("randomForest")
+#install.packages("maxLik")
+
 library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(lme4)
-library(randomForest)
+library(Boruta)
+#library(randomForest)
+library(maxLik)
 ```
 
 
@@ -281,25 +286,21 @@ ggplot(data = bf7, aes(x=Stay_In_Current_City_Years, y = total_purchase, fill = 
 ## 4.1 Predictors selection
 
 ```{r}
-# library(Boruta)
-# boruta_output <- Boruta(total_delay~., data = train, doTrace = 2)
-# boruta_signif <- names(boruta_output$finalDecision[boruta_output$finalDecision %in% c("Confirmed", "Tentative")])
-# print(boruta_signif)
-# plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
+boruta_output <- Boruta(Purchase ~ ., data = bf, doTrace = 2)
+boruta_signif <- names(boruta_output$finalDecision[boruta_output$finalDecision %in% c("Confirmed", "Tentative")])
+print(boruta_signif)
+plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
 
 
 #Import the random forest library and fit a model
-library(randomForest)
-#+ Occupation + City_Category + Stay_In_Current_City_Years + Marital_Status
-rf = randomForest(Purchase ~ Gender + Age, data=bf)
-# Create an importance based on mean decreasing gini
-importance(fit_rf)
- 
+#library(randomForest)
+#rf = randomForest(Purchase ~ Gender + Age + Occupation + City_Category + 
+                    #Stay_In_Current_City_Years + Marital_Status, data=bf)
+#importance(fit_rf)
 # compare the feature importance with varImp() function
-varImp(fit_rf)
- 
+#varImp(fit_rf)
 # Create a plot of importance scores by random forest
-varImpPlot(fit_rf)
+#varImpPlot(fit_rf)
 ```
 
 
@@ -317,17 +318,38 @@ names(tt)[tt > 1]
 
 
 
-## 4.1 Modeling
+## 4.2 Modeling
 
+### 4.2.1 Linear regression model
+
+```{r}
+
+```
+
+
+### 4.2.2 Multilevel regression (vary by intercept)
 individual level variable: 
+
+
 
 group level variables: 
 
 ```{r}
-r1 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
-             Product_Category_3 + (1|User_ID), data = bf)
-summary(r1)
+ggplot(bf) + aes(x=,y=Purchase,group=User_ID) + 
+  geom_line(alpha=0.3) + geom_smooth(method="lm",aes(group=1)) + 
+  ylab("Purchase")
 ```
+
+
+
+
+```{r}
+r1 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
+             Product_Category_3 + (1|User_ID), data = bf, REML=FALSE)
+display(r1)
+```
+
+### 4.2.3 Multilevel regression (varying slopes)
 
 ```{r}
 r2 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
@@ -340,10 +362,19 @@ summary(r2)
 #createDataPartition
 ```
 
+### 4.2.4 Multilevel generalized linear models
+
+From figure(distribution), we can see the black friday purchase data has the 
+
+```{r}
+
+```
 
 
 
-## 4.2 Model Checking
+
+
+## 4.3 Model Checking
 
 ```{r}
 
