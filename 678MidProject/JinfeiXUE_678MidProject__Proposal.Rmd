@@ -34,13 +34,16 @@ library(car) #vif
 
 # 1 Introduction
 
-The dataset is a sample of the transactions made in a retail store during Black Friday. The store wants to know better the customer purchase behaviour against different products. Specifically, here the problem is a regression problem where we are trying to predict the dependent variable (the amount of purchase) with the help of the information contained in the other variables.
+A retail company “ABC Private Limited” wants to understand the customer purchase behaviour (specifically, purchase amount) against various products of different categories. They have shared purchase summary of various customers for selected high volume products from last month. The data set also contains customer demographics (age, gender, marital status, city_type, stay_in_current_city), product details (product_id and product category) and Total purchase_amount of each client from last month.
 
-Classification problem can also be settled in this dataset since several variables are categorical, and some other approaches could be "Predicting the age of the consumer" or even "Predict the category of goods bought". This dataset is also particularly convenient for clustering and maybe find different clusters of consumers within it.
+Now, they want to build a model to predict the purchase amount of customer against the other variables which will help them to create personalized offer for customers. Here I have to mention that because of the privacy, the occupation, City_Category, product categories are masked and the categories are represented by numbers or letters.
+
 
 # 2 Data
 
-This dataset has 550,000 observations and 12 variables, and the main variables are:
+Both train and test data can be downloaded from the website https://datahack.analyticsvidhya.com/contest/black-friday/?utm_source=auto-email. The train dataset has 550,068 observations and 12 variables while the test data, which contains similar data as train except for their purchase amount, has 233,599 observations.
+
+In the two datasets, the main variables are listed as follows:
 
 - User_ID (as group)
 
@@ -64,17 +67,17 @@ This dataset has 550,000 observations and 12 variables, and the main variables a
 
 - Purchase (Purchase amount in dollars)
 
-## 2.1 Dataset{.tabset .tabset-fade .tabset-pills}
+## 2.1 Dataset
 
 ```{r, message = FALSE, echo = FALSE} 
 #input data
-bf <- read.csv("BlackFriday.csv")
+bf <- read.csv("train.csv")
 
 #print head data
 head(bf)
 ```
 
-## 2.2 Data Structure{.tabset .tabset-fade .tabset-pills}
+## 2.2 Train Data Structure
 ```{r, message = FALSE, echo = FALSE} 
 #data structure
 glimpse(bf)
@@ -82,12 +85,12 @@ summary(bf)
 ```
 
 ```{r}
-# replace NA with zero
 sapply(bf, function(x) sum(is.na(x)))
+# Because NAs only happen in product category variables and it represents the client didn't buy any products in the category, I replace NA with zero.
 bf[is.na(bf)] <- 0
-sum(is.na(bf))
+sum(is.na(bf)) #check
 
-# Transfer "Occupation" to factor
+# transfer occupation to factor
 bf$Occupation <- as.factor(bf$Occupation)
 ```
 
@@ -291,13 +294,13 @@ ggplot(data = bf7, aes(x=Stay_In_Current_City_Years, y = total_purchase, fill = 
 
 # 4 Modeling and Prediction
 
-## 4.1 Predictors selection
+## 4.1 Predictors selection (pending)
 
 ```{r}
-boruta_output <- Boruta(Purchase ~ ., data = bf, doTrace = 2)
-boruta_signif <- names(boruta_output$finalDecision[boruta_output$finalDecision %in% c("Confirmed", "Tentative")])
-print(boruta_signif)
-plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
+#boruta_output <- Boruta(Purchase ~ ., data = bf, doTrace = 2)
+#boruta_signif <- names(boruta_output$finalDecision[boruta_output$finalDecision %in% c("Confirmed", "Tentative")])
+#print(boruta_signif)
+#plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
 
 
 #Import the random forest library and fit a model
@@ -313,37 +316,49 @@ plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
 
 
 
-
-
-
 ## 4.2 Modeling
 
-The predictors include "Gender", "Age", "Occupation", "City_Category", "Stay_In_Current_City_Years", "Marital_Status", "Product_Category_1", "Product_Category_2" and "Product_Category_3" and the response variable is "Purchase".
-
+The predictors include "Gender", "Age", "Occupation", "City_Category", "Stay_In_Current_City_Years", "Marital_Status", "Product_Category_1", "Product_Category_2" and "Product_Category_3". The response variable is "Purchase".
 
 
 ### 4.2.1 Linear regression model
 
 ```{r}
-bf$log.purchase <- log(bf$Purchase)
-bf1$log.total <- log(bf1$total_purchase)
-
-
 r1 <- lm(Purchase ~ Gender + Age + Occupation + City_Category + 
            Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
            Product_Category_2 + Product_Category_3, data = bf)
 summary(r1)
-#library(car)
-vif(r1) 
 
+# Residual Plot
+plot(r1, which = 1)
 
-#library(olsrr)
-#ols_step_all_possible(r1)
-
-
-plot(r1)
-
+# Marginal model plots
+marginalModelPlots(r1)
 ```
+
+From the residual plot, we can see that the points are not randomly dispersed around the horizontal line at zero(the dashed black line).
+
+
+```{r}
+# standardize the "purchase" variable
+bf$sd_purchase <- (bf$Purchase-mean(bf$Purchase))/sd(bf$Purchase)
+
+r2 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
+           Product_Category_2 + Product_Category_3, data = bf)
+summary(r2)
+
+# Residual Plot
+plot(r2, which = 1)
+
+# Marginal model plots
+marginalModelPlots(r2)
+```
+
+
+
+
+
 
 
 ### 4.2.2 Multilevel regression (vary by intercept)
@@ -398,8 +413,7 @@ summary(r2)
 From figure(distribution), we can see the black friday purchase data has the 
 
 ```{r}
-#bf$log.purchase <- log(bf$Purchase)
-#bf1$log.total <- log(bf1$total_purchase)
+
 #summary(bf$Purchase)
 #summary(bf1$log.total)
 
@@ -419,13 +433,7 @@ ggplot(data = bf1, aes(x = total_purchase)) +
 
 
 
-ggplot(data = bf, aes(x = Purchase)) + 
-  geom_histogram(col = 'black', fill = 'blue', binwidth = 0.5, center = 8) +
-  labs(x = 'Dollars', y = 'the Number of Buyers', 
-       title = "Figure3.1 Distribution of total purchasing by buyers")
-  + 
-  scale_y_continuous(limits = c(0,2000), breaks = c(0,500,1000,1500,2000)) + 
-  scale_x_continuous(labels = scales::comma))
+
 ```
 
 
@@ -461,13 +469,19 @@ ggplot(data = bf1, aes(x = log.total)) +
 ```
 
 ```{r}
+
 R1 <- lm(total_purchase ~ Gender + Age + Occupation + City_Category + 
            Stay_In_Current_City_Years + Marital_Status + total_Product_Category_1 + 
            total_Product_Category_2 + total_Product_Category_3, data = bf1)
 summary(R1)
+
 #chisq.test(bf1)
 ```
 
+```{r}
+test <- read.csv("test.csv")
+glimpse(test)
+```
 
 
 
