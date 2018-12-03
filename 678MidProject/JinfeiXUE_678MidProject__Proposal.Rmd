@@ -294,17 +294,20 @@ ggplot(data = bf7, aes(x=Stay_In_Current_City_Years, y = total_purchase, fill = 
 
 # 4 Modeling and Prediction
 
-## 4.1 Predictors selection (pending)
+## 4.1 Train and Test Datasets
 
 ```{r}
-#boruta_output <- Boruta(Purchase ~ ., data = bf, doTrace = 2)
-#boruta_signif <- names(boruta_output$finalDecision[boruta_output$finalDecision %in% c("Confirmed", "Tentative")])
-#print(boruta_signif)
-#plot(boruta_output, cex.axis=.5, las=2, xlab="", main="Variable Importance")
+train <- read.csv("train.csv")
+test <- read.csv("test.csv")
+
+# Test whether User_ID in test dataset is a subset of User_ID in train dataset
+sum(unique(test$User_ID) %in% unique(train$User_ID))==length(unique(test$User_ID))
+```
 
 
-#Import the random forest library and fit a model
-#library(randomForest)
+
+
+```{r}
 #rf = randomForest(Purchase ~ Gender + Age + Occupation + City_Category + 
                     #Stay_In_Current_City_Years + Marital_Status, data=bf)
 #importance(fit_rf)
@@ -312,6 +315,12 @@ ggplot(data = bf7, aes(x=Stay_In_Current_City_Years, y = total_purchase, fill = 
 #varImp(fit_rf)
 # Create a plot of importance scores by random forest
 #varImpPlot(fit_rf)
+
+
+
+
+
+
 ```
 
 
@@ -324,6 +333,18 @@ The predictors include "Gender", "Age", "Occupation", "City_Category", "Stay_In_
 ### 4.2.1 Linear regression model
 
 ```{r}
+library(MASS)
+# Fit the full model 
+r1 <- lm(Purchase ~., data = train)
+# Stepwise regression model
+r1_step <- stepAIC(r1, direction = "both", 
+                      trace = FALSE)
+summary(step.model)
+
+
+
+
+
 r1 <- lm(Purchase ~ Gender + Age + Occupation + City_Category + 
            Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
            Product_Category_2 + Product_Category_3, data = bf)
@@ -333,7 +354,7 @@ summary(r1)
 plot(r1, which = 1)
 
 # Marginal model plots
-marginalModelPlots(r1)
+#marginalModelPlots(r1)
 ```
 
 From the residual plot, we can see that the points are not randomly dispersed around the horizontal line at zero(the dashed black line).
@@ -342,6 +363,11 @@ From the residual plot, we can see that the points are not randomly dispersed ar
 ```{r}
 # standardize the "purchase" variable
 bf$sd_purchase <- (bf$Purchase-mean(bf$Purchase))/sd(bf$Purchase)
+r2 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
+           Product_Category_2 + Product_Category_3, data = bf)
+
+
 
 r2 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
            Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
@@ -352,21 +378,15 @@ summary(r2)
 plot(r2, which = 1)
 
 # Marginal model plots
-marginalModelPlots(r2)
+#marginalModelPlots(r2)
 ```
 
-
-
-
-
+There still exists trends in the residual plot. Then I will try multilevel models.
 
 
 ### 4.2.2 Multilevel regression (vary by intercept)
-individual level variable: 
 
-
-
-group level variables: 
+Individual level variables include "Product_Category_1", "Product_Category_2" and "Product_Category_3". Group level variables include "Gender", "Age", "Occupation", "City_Category", "Stay_In_Current_City_Years" and "Marital_Status".
 
 ```{r}
 # Locate group level variables
