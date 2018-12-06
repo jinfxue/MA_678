@@ -14,20 +14,13 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r, message=FALSE, warning=FALSE}
-#install.packages("Boruta")
-#install.packages("randomForest")
 #install.packages("maxLik")
-#install.packages("olsrr")
 
-library(dplyr)
-library(tidyr)
 library(ggplot2)
 library(lme4)
-library(Boruta)
-#library(randomForest)
 library(maxLik)
 library(car) #vif
-#library(olsrr) #ols_step_all_possible
+library(MASS)
 
 ```
 
@@ -67,22 +60,49 @@ In the two datasets, the main variables are listed as follows:
 
 - Purchase (Purchase amount in dollars)
 
-## 2.1 Dataset
+## 2.1 Data Structure
 
 ```{r, message = FALSE, echo = FALSE} 
 #input data
-bf <- read.csv("train.csv")
+data <- read.csv("train.csv")
 
 #print head data
-head(bf)
+head(data)
+
+#data structure
+glimpse(data)
+summary(data)
 ```
 
-## 2.2 Train Data Structure
-```{r, message = FALSE, echo = FALSE} 
-#data structure
-glimpse(bf)
-summary(bf)
+## 2.2 Random Sampling
+
+```{r, warning=FALSE, message=FALSE}
+# Sample groups from original data
+set.seed(123)
+index <- data_frame(User_ID = sample(unique(data$User_ID), 500, replace = FALSE)) %>%
+  arrange(User_ID)
+sample <- inner_join(data, index)
 ```
+
+## 2.3 Clean the Sample Data
+
+```{r, warning=FALSE, message=FALSE}
+# Check the minimum number of obeservations in groups
+group <- sample %>%
+  group_by(User_ID) %>% 
+  summarise(number = n()) %>%
+  arrange(number)
+min(group$number)
+# So we can divide the sample into train and test datasets by groups
+
+
+
+```
+
+
+
+
+### 2.1.2 Clean Sample Train Data
 
 ```{r}
 sapply(bf, function(x) sum(is.na(x)))
@@ -92,6 +112,44 @@ sum(is.na(bf)) #check
 
 # transfer occupation to factor
 bf$Occupation <- as.factor(bf$Occupation)
+
+# replace outliers with median value of purchase amount
+boxplot(bf$Purchase, main="Purchase Amount", boxwex=0.1)
+outlier_values <- boxplot.stats(bf$Purchase)$out  # outlier values
+bf$Purchase[which(bf$Purchase %in% outlier_values)]=median(bf$Purchase)
+
+```
+
+
+## 2.2 Test Dataset
+
+```{r, message = FALSE, echo = FALSE} 
+#input data
+test <- read.csv("test.csv")
+
+#print head data
+head(test)
+```
+
+### 2.2.1 Clean Test Data
+
+```{r}
+sapply(test, function(x) sum(is.na(x)))
+# Because NAs only happen in product category variables and it represents the client didn't buy any products in the category, I replace NA with zero.
+test[is.na(test)] <- 0
+sum(is.na(test)) #check
+
+# transfer occupation to factor
+test$Occupation <- as.factor(test$Occupation)
+```
+
+### 2.2.2 Sample (According to the Train Dataset Sample)
+
+```{r, message=FALSE}
+bf_test <- inner_join(test, index) # test data sample
+
+# Test whether User_ID in test dataset is a subset of User_ID in train dataset
+sum(unique(bf_test$User_ID) %in% unique(bf$User_ID))==length(unique(bf_test$User_ID))
 ```
 
 
@@ -105,7 +163,7 @@ bf %>%
   select(User_ID) %>%
   unique() %>%
   nrow() %>%
-  paste("buyers registered at Black Friday")
+  paste("buyers sampled registered at Black Friday")
 ```
 
 ```{r}
@@ -166,11 +224,12 @@ ggplot(data = bf3, aes(x=City_Category, y = total_purchase, fill = Gender)) +
 ## 3.4 Purchasing in each age range by marital status
 From the above data visualization,we find that men are morely to buy,so there comes our next question:men of what age will spend more money.Let's find out.
 ```{r, message=FALSE, warning=FALSE}
+library(tidyr)
 bf_age <- bf %>% 
   separate(Age,c("aa","bb")) %>% 
   mutate(aa=as.numeric(aa),bb=as.numeric(bb)) %>% 
   mutate(Age=(aa+bb)/2) %>% 
-  select(-c(aa,bb))
+  dplyr::select(-c(aa,bb))
 
 bf4_1 <- bf_age %>% 
   mutate(age_range=case_when(Age <= 18 ~"Young",Age > 18 & Age <= 35 ~ "Mature",
@@ -292,135 +351,191 @@ ggplot(data = bf7, aes(x=Stay_In_Current_City_Years, y = total_purchase, fill = 
   scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
 ```
 
-# 4 Modeling and Prediction
+## 3.8 Correlation among the number of product_category_1/2/3
 
-## 4.1 Train and Test Datasets
-
-```{r}
-train <- read.csv("train.csv")
-test <- read.csv("test.csv")
-
-# Test whether User_ID in test dataset is a subset of User_ID in train dataset
-sum(unique(test$User_ID) %in% unique(train$User_ID))==length(unique(test$User_ID))
+```{r, message=FALSE}
+library(dplyr)
+product <- bf %>%
+  select(Product_Category_1, Product_Category_2, Product_Category_3)
+res <- cor(product)
+round(res, 2)
+library(corrplot)
+corrplot(res, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45, title = "Figure3.8 Correlation among the number of product_category_1/2/3")
 ```
 
 
 
 
-```{r}
-#rf = randomForest(Purchase ~ Gender + Age + Occupation + City_Category + 
-                    #Stay_In_Current_City_Years + Marital_Status, data=bf)
-#importance(fit_rf)
-# compare the feature importance with varImp() function
-#varImp(fit_rf)
-# Create a plot of importance scores by random forest
-#varImpPlot(fit_rf)
+# 4 Modeling and Checking
 
-
-
-
-
-
-```
-
-
-
-## 4.2 Modeling
 
 The predictors include "Gender", "Age", "Occupation", "City_Category", "Stay_In_Current_City_Years", "Marital_Status", "Product_Category_1", "Product_Category_2" and "Product_Category_3". The response variable is "Purchase".
 
+## 4.1 Linear regression model
 
-### 4.2.1 Linear regression model
+### 4.1.1 Linear regression model
 
-```{r}
-library(MASS)
+```{r, message=FALSE, warning=FALSE}
+# Standardize the response variable
+bf$sd_purchase <- (bf$Purchase-mean(bf$Purchase))/sd(bf$Purchase)
 # Fit the full model 
-r1 <- lm(Purchase ~., data = train)
-# Stepwise regression model
-r1_step <- stepAIC(r1, direction = "both", 
-                      trace = FALSE)
-summary(step.model)
-
-
-
-
-
-r1 <- lm(Purchase ~ Gender + Age + Occupation + City_Category + 
-           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
+r1 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
            Product_Category_2 + Product_Category_3, data = bf)
+
 summary(r1)
 
 # Residual Plot
 plot(r1, which = 1)
 
 # Marginal model plots
-#marginalModelPlots(r1)
+library(car)
+marginalModelPlots(r1)
 ```
 
-From the residual plot, we can see that the points are not randomly dispersed around the horizontal line at zero(the dashed black line).
+From the residual plot, we can see that the points are not randomly dispersed around the horizontal line at zero(the dashed black line). Also, we can see from the first marginal plot, there exists a big discrepency between the linear regression line and actual data line. And from the third marginal plot, we can conclude the model does not fit the data well.
 
+
+
+
+### 4.1.2 Polynomial regression model
 
 ```{r}
-# standardize the "purchase" variable
-bf$sd_purchase <- (bf$Purchase-mean(bf$Purchase))/sd(bf$Purchase)
+ggplot(bf)+geom_point()+aes(x=Product_Category_1,y=sd_purchase)+
+  labs(title = "Figure 4.1.2", 
+       subtitle = "The Number of Product Category 1 V.S Standardized Purchase Amount",
+       x = "The Number of Products Customers bought in Category 1 (unit)",
+       y = "Standardized Purchase Amount (dollars)")
+```
+
+From figure 4.1.2, we can see a nonlinear effect of Product_Category_1 on sd_purchase. Therefore, then I will try to fit a polynomial regression model.
+
+```{r, message=FALSE, warning=FALSE}
 r2 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
-           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
-           Product_Category_2 + Product_Category_3, data = bf)
-
-
-
-r2 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
-           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 + 
-           Product_Category_2 + Product_Category_3, data = bf)
+           Stay_In_Current_City_Years + Marital_Status + 
+           poly(Product_Category_1, 2) + Product_Category_2 + Product_Category_3, data = bf)
 summary(r2)
-
+#round(r2$coefficients, digits = 2)
 # Residual Plot
 plot(r2, which = 1)
 
 # Marginal model plots
-#marginalModelPlots(r2)
+library(car)
+marginalModelPlots(r2)
 ```
 
-There still exists trends in the residual plot. Then I will try multilevel models.
+### 4.1.3 Linear regression model (with interaction)
+
+```{r, message=FALSE, warning=FALSE}
+r3 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status +
+           Product_Category_2*Product_Category_3, data = bf)
+summary(r3)
+#round(r2$coefficients, digits = 2)
+# Residual Plot
+plot(r3, which = 1)
+
+# Marginal model plots
+library(car)
+marginalModelPlots(r3)
+```
+
+We can see the residual plot is a little better than before but there still exists a decreasing trend.
 
 
-### 4.2.2 Multilevel regression (vary by intercept)
+### 4.1.4 Cumulative logit model
+
+```{r, message=FALSE, warning=FALSE}
+plot(bf$sd_purchase)
+#axis(side=2, at=seq(-2, 3, by=0.01))
+
+ggplot(bf)+geom_point()+aes(x=Age,y=sd_purchase)
+
+#histrv <- hist(bf$sd_purchase, breaks = 1000)
+#which.min(histrv$density)
+
+```
+
+We can see the standardized purchase amount by age have some gaps although it is a continuous variable. Therefore, I will divide the value of standardized purchase amount into several categories. That is to say, standardized purchase amount is transformed to ordinal variable.
+
+```{r, message=FALSE, warning=FALSE}
+# Transform sd_purchase into ordinal variable
+quan <- quantile(bf$sd_purchase)
+
+bf <- bf%>% 
+  mutate(purchase_level=case_when(sd_purchase <= quan[2] ~"Low",
+                                  sd_purchase > quan[2] & sd_purchase <= quan[3] ~ "Somewhat Low",
+                                  sd_purchase > quan[3] & sd_purchase < quan[4] ~ "Somewhat High",
+                                  sd_purchase >= quan[4] ~"High"))
+
+bf$purchase_level <- factor(bf$purchase_level, 
+                            levels=c("Low", "Somewhat Low", "Somewhat High", "High"), ordered=TRUE)
+```
+
+The new response variable called purchase_level has 4 categories including "Low", "Somewhat Low", "Somewhat High" and "High".
+
+```{r, message=FALSE, warning=FALSE}
+# Fit the full model
+r4_full <- polr(purchase_level ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+           Product_Category_2+Product_Category_3, data = bf)
+
+# Stepwise regression model(select the model which has the smallest AIC)
+library(MASS)
+r4 <- stepAIC(r4_full, direction = "both", trace = FALSE)
+summary(r4)
+
+ctable <- coef(summary(r4))
+p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+ctable <- cbind(ctable, "p value" = p)
+kableExtra::kable(ctable)
+
+# Check the model: Likelihood ratio test
+Anova(r4, type = 3)
+
+
+```
+
+
+```{r}
+# Prediction
+predict.purchase <- predict(r4, bf_test)  # predict the classes directly
+head(predict.purchase)
+
+
+predicted.prop <- predict(r4, bf_test, type="p")  # predict the probabilites
+head(predicted.prop)
+
+```
+
+
+### 4.1.5 Multilevel cumulative logit model (vary by intercept)
 
 Individual level variables include "Product_Category_1", "Product_Category_2" and "Product_Category_3". Group level variables include "Gender", "Age", "Occupation", "City_Category", "Stay_In_Current_City_Years" and "Marital_Status".
 
-```{r}
-# Locate group level variables
-for (i in 2:5) {
-  
-}
-tt <- tapply(bf$Product_ID, bf$User_ID, 
-             function(x) {
-               length(unique(x))
-             })
-names(tt)[tt > 1]
+
+```{r, message=FALSE, warning=FALSE}
+r5 <- lmer(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+             Product_Category_2 + Product_Category_3 + (1|User_ID), data = bf)
+summary(r5)
 ```
 
+### 4.1.6 Multilevel regression (varying slopes)
+
 ```{r}
-ggplot(bf) + aes(x=,y=Purchase,group=User_ID) + 
-  geom_line(alpha=0.3) + geom_smooth(method="lm",aes(group=1)) + 
-  ylab("Purchase")
+ggplot(bf)+geom_point()+aes(x=Product_Category_1,y=sd_purchase)+
+  facet_wrap(~User_ID)+geom_smooth(method="lm",se=FALSE)+
+  xlab("age in days")+ ylab("distance in pixels")
 ```
 
 
 
-
 ```{r}
-r1 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
-             Product_Category_3 + (1|User_ID), data = bf, REML=FALSE)
-summary(r1)
-```
-
-### 4.2.3 Multilevel regression (varying slopes)
-
-```{r}
-r2 <- lmer(Purchase ~ Product_Category_1 + Product_Category_2 + 
-             Product_Category_3 + (1|User_ID), data = bf)
-summary(r2)
+r6 <- lmer(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+             Product_Category_2 + Product_Category_3 + (1+|User_ID), data = bf)
+summary(r6)
 ```
 
 
@@ -468,40 +583,6 @@ ggplot(data = bf1, aes(x = total_purchase)) +
 
 ## 4.3 Prediction
 
-
-# 5 Modeling and Prediction (for total_purchase)
-
-## 5.1 
-
-## 5.2 Modeling
-
-### 5.2.1 Linear regression model
-
-```{r}
-# Do the log transformation for "total_purchase"
-bf1$log.total <- log(bf1$total_purchase)
-summary(bf1$log.total)
-
-ggplot(data = bf1, aes(x = log.total)) + 
-  geom_histogram(col = 'black', fill = 'blue', binwidth = 0.05, center = 12) +
-  labs(x = 'Dollars', y = 'the Number of Buyers', 
-       title = "Figure5.1 Distribution of log(total_purchase) by buyers")
-```
-
-```{r}
-
-R1 <- lm(total_purchase ~ Gender + Age + Occupation + City_Category + 
-           Stay_In_Current_City_Years + Marital_Status + total_Product_Category_1 + 
-           total_Product_Category_2 + total_Product_Category_3, data = bf1)
-summary(R1)
-
-#chisq.test(bf1)
-```
-
-```{r}
-test <- read.csv("test.csv")
-glimpse(test)
-```
 
 
 
