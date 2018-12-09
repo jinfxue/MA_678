@@ -1,0 +1,729 @@
+---
+title: "678 Midterm Project"
+author: "Jinfei Xue"
+date: "Dec 8, 2018"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+subtitle: Retail Data Analysis
+---
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+#install.packages("splitstackshape")
+#install.packages("pdp")
+```
+
+
+# Abstract
+
+Sales forecasting is a crucial part of the financial planning of a business. This report use the retail data from a company to understand the customer purchase behaviour. First, the report shows the structure of data and random sampling. After data cleaning, the sample dataset is divided into train and test datasets. Second, exploratory data analysis is made to show relationships between variables. Third, this report makes several types of models, including linear/polynomial/multinomial/multilevel models, check and compare them based on ANOVA test to select the relatively good model (multilevel model varying by intercepts). Finally, this report makes predictions based on the selected model, discusses the implication and limitations of the model, and indicates the future direction of retail forecasting methods.
+
+
+$\textbf{Keywords: retail forecasting, multilevel model, model check}$ 
+
+\newpage
+
+# 1 Introduction
+
+## 1.1 Background
+
+A retail company named “ABC Private Limited” wants to understand the customer purchase behaviour (specifically, purchase amount) against various products of different categories. They have shared purchase summary of various customers for selected high volume products from last month. The data set also contains customer demographics (age, gender, marital status, city_type, stay_in_current_city), product details (product_id and product category) and purchase amount of each client.
+
+Now, they want to build a model to predict the purchase amount of customer against the other variables which will help them to create personalized offer for customers. Here I have to mention that because of the privacy, the occupation, City_Category, product categories are masked and the categories are represented by numbers or letters.
+
+## 1.2 Data
+
+The data can be downloaded from the website https://datahack.analyticsvidhya.com/contest/black-friday/?utm_source=auto-email. The original dataset has 550,068 observations and 12 variables. The main variables are listed as follows:
+
+- User_ID (as group)
+
+- Gender (M/F)
+
+- Age (Age in bins)
+
+- Occupation (0, 1, ..., 20)
+
+- City_Category (A/B/C)
+
+- Stay_In_Current_City_Years (the number of years stay in current city)
+
+- Marital_Status (0/1)
+
+- Product_Category_1 (the number of bought products in category 1)
+
+- Product_Category_2 (the number of bought products in category 2)
+
+- Product_Category_3 (the number of bought products in category 3)
+
+- Purchase (Purchase amount in dollars)
+
+### 1.2.1 Data Structure
+
+The following gives an impression of the structure of the data.
+
+The first six rows of the data are shown below:
+
+```{r, message = FALSE, echo = FALSE} 
+#input data
+data <- read.csv("train.csv")
+
+#print head data
+head(data)
+```
+
+The following shows the class of variables. Some variables need to be transformed to factor, like $\textbf{Occupation}$ and $\textbf{Marital_Status}$. $\textbf{User_ID}$ should be transformed to character or factor.
+
+```{r, message = FALSE, echo = FALSE}
+#data structure
+library(dplyr)
+glimpse(data)
+```
+
+The distributions of each variable are shown below:
+
+```{r, message = FALSE, echo = FALSE}
+summary(data)
+```
+
+
+### 1.2.2 Random Sampling
+
+Because the number of observations in the original data is too large, we randomly choose 200 $\textbf{User_ID}$s as index to sample observations.
+
+```{r, warning=FALSE, message=FALSE}
+# Sample groups from original data
+set.seed(123)
+index <- data_frame(User_ID = sample(unique(data$User_ID), 200, replace = FALSE)) %>%
+  arrange(User_ID)
+sample <- inner_join(data, index) %>%
+  arrange(User_ID)
+```
+
+### 1.2.3 Data Cleaning
+
+Because NAs only happen in product category variables and it represents the client didn't buy any products in that category, we replace NA with zero.
+
+```{r, warning=FALSE, message=FALSE}
+# Check NA
+sapply(sample, function(x) sum(is.na(x)))
+
+# Replace NA with 0
+sample[is.na(sample)] <- 0
+sum(is.na(sample)) #check
+```
+
+We can see now there is no NAs in the sample data by checking it.
+
+```{r}
+# transfer variables to factor
+sample$User_ID <- as.factor(sample$User_ID)
+sample$Occupation <- as.factor(sample$Occupation)
+sample$Marital_Status <- as.factor(sample$Marital_Status)
+
+# Boxplot to show the outliers
+boxplot(sample$Purchase, main="Figure1.1 Purchase Amount", boxwex=0.1)
+```
+
+From the bosxplot, we can see there are some outliers in $\textbf{Purchase}$. So then we will replace those outliers with median value of $\textbf{Purchase}$.
+
+```{r}
+# replace outliers with median value of purchase amount
+outlier_values <- boxplot.stats(sample$Purchase)$out  # outlier values
+sample$Purchase[which(sample$Purchase %in% outlier_values)]=median(sample$Purchase)
+```
+
+### 1.2.4 Train and Test Datasets
+
+Because after modeling we should use test data to predict response variable and check the accuracy of the model, we first divide the sample data into train and test datasets. The minimum number of observations in each $\textbf{User_ID}$ is 11 so that we can use stratified sampling by $\textbf{User_ID}$ to randomly choose 70% of the sample data as train dataset and the remaining as test dataset. 
+
+In order to ensure test dataset has the same User_IDs as train dataset, we finally check it and the output is "TRUE".
+
+```{r, warning=FALSE, message=FALSE}
+# Check the minimum number of obeservations in groups
+group <- sample %>%
+  group_by(User_ID) %>% 
+  summarise(number = n()) %>%
+  arrange(User_ID) 
+min(group$number)
+# So we can divide the sample into train and test datasets by groups (User_ID)
+
+# Train dataset
+set.seed(221)
+bf <- splitstackshape::stratified(sample, "User_ID", .7)
+
+# Test dataset
+bf_test <- anti_join(sample, bf)
+
+# Test whether User_ID in test dataset is a subset of User_ID in train dataset
+sum(unique(bf_test$User_ID) %in% unique(bf$User_ID))==length(unique(bf_test$User_ID))
+```
+
+
+# 2 Exploratory Data Analysis
+
+## 2.1 Total Purchase Amount Distribution
+
+```{r}
+#total purchaser
+bf %>%
+  select(User_ID) %>%
+  unique() %>%
+  nrow() %>%
+  paste("buyers sampled registered at Black Friday")
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+bf1 <- bf %>% 
+  group_by(User_ID, Gender, Age, Occupation, City_Category, 
+           Stay_In_Current_City_Years, Marital_Status) %>%
+  summarise(total_Product_Category_1 = sum(Product_Category_1), 
+            total_Product_Category_2 = sum(Product_Category_2),
+            total_Product_Category_3 = sum(Product_Category_3),
+            total_purchase = sum(Purchase)) 
+summary(bf1$total_purchase)
+
+ggplot(data = bf1, aes(x = total_purchase)) + 
+  geom_histogram(col = 'black', fill = 'blue') +
+  labs(x = 'Total Purchase Amount (dollars)', y = 'the Number of Clients', 
+       title = "Figure2.1 Distribution of total purchase amount by clients") + 
+  scale_y_continuous(limits = c(0,50), breaks = c(0,10,20,30,40)) + 
+  scale_x_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+From figure 2.1, we can see most ofvclients spent relatively small amount of money while there exists minority of clients spent very large amount of money last month.
+
+
+## 2.2 Total Number in Each Product Category by Gender
+
+```{r}
+library(tidyr)
+bf2 <- bf %>%
+  group_by(Gender) %>%
+  summarise(Product_Category_1 = sum(Product_Category_1), 
+            Product_Category_2 = sum(Product_Category_2), 
+            Product_Category_3 = sum(Product_Category_3)) %>% 
+  gather(key = Product_Category, value = total_number,
+         Product_Category_1,Product_Category_2,Product_Category_3)
+
+ggplot(data = bf2, aes(x=Product_Category, y = total_number,fill = Gender)) +
+  geom_col() +
+  labs(x = 'Product Category', y = 'Total Number (units)', 
+       title = "Figure2.2 Total number in each product category by gender") + 
+  guides(fill=guide_legend(title = "Gender")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+We can see the product category 2 is the most popular category in the retail store. Besides, males bought more products than females in all the three categories.
+
+## 2.3 Total Purchase Amount in Each City by Gender
+
+```{r}
+bf3 <- bf %>%
+  group_by(City_Category, Gender) %>%
+  summarise(total_purchase = sum(Purchase))
+
+ggplot(data = bf3, aes(x=City_Category, y = total_purchase, fill = Gender)) +
+  geom_col() +
+  labs(x = 'City Category', y = 'Total Purchase (dollars)', 
+       title = "Figure2.3 Total purchase amount in each city by gender") + 
+  guides(fill=guide_legend(title = "Gender")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+
+ggplot(data = bf, aes(x=City_Category, y = Purchase, fill = Gender)) +
+  geom_boxplot() +
+  labs(x = 'City Category', y = 'Total Purchase (dollars)', 
+       title = "Figure2.4 Purchase amount in each city by gender") + 
+  guides(fill=guide_legend(title = "Gender")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+From figure 2.3, we can find that clients from city B spent the most money in the three cities and in each city, males spent more money than females. However, from figure 2.4 we can see that the reason why total amount in city B is the most is that there are more outliers whose values are very large.
+
+## 2.4 Total Purchase Amount in Each Age Range by Gender
+
+From the above data visualizations, we find that males spent more money than females, so there comes our next question: males of what age range will spend more money. Let's find out.
+
+```{r, message=FALSE, warning=FALSE}
+bf5 <- bf %>%
+  group_by(Age, Gender) %>%
+  summarise(total_purchase = sum(Purchase))
+  
+ggplot(data = bf5, aes(x=Age, y = total_purchase, fill = Gender)) +
+  geom_col() +
+  labs(x = 'Age', y = 'Total Purchase Amount (dollars)', 
+       title = "Figure2.5 Total purchase amount in each age range by gender") + 
+  guides(fill=guide_legend(title = "Gender")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+From figure 2.5, we can find that males who are 26-35 years old spent the most money, while males who are 0-17 or more than 55 years old spent the least money.
+
+
+## 2.5 Medium Purchase Amount of Clients in Each Age Range by City Category
+
+```{r}
+p3<-bf %>% 
+  filter(Gender=="M") %>% 
+  group_by(Age,City_Category) %>% 
+  summarise(purchase=median(Purchase)) %>%
+  ggplot(aes(x=Age,y=City_Category,fill=purchase))+
+  geom_tile()+
+  scale_fill_continuous(low="blue",high="red")+
+  labs(x = 'Age Range', y = 'City Category', 
+       title = "Figure2.6 Medium purchase amount of males in each age range by city category")
+
+p4<-bf %>% 
+  filter(Gender=="F") %>% 
+  group_by(Age,City_Category) %>% 
+  summarise(purchase=median(Purchase)) %>%
+  ggplot(aes(x=Age,y=City_Category,fill=purchase))+
+  geom_tile()+
+  scale_fill_continuous(low="blue",high="red")+
+  labs(x = 'Age Range', y = 'City Category', 
+       title = "Figure2.7 Medium purchase amount of females in each age range by city category")
+
+gridExtra::grid.arrange(p3,p4)
+```
+
+From figure 2.5 and 2.6, we can find that although the total amount of money males in 0-17 age range spent is much less than that in 26-35 age range, the medium amount of money males in 0-17 age range spent is more than that in 26-35 age range for clients from City A. From figure 2.7, we can see that for females, the medium amount of money clients from City A who are more than 55 years old spent is the largest.
+
+## 2.6 Toal Purchase Amount in Each Occupation by City Category
+
+```{r}
+bf6 <- bf %>%
+  group_by(Occupation, City_Category) %>%
+  summarise(total_purchase = sum(Purchase))
+
+ggplot(data = bf6, aes(x=Occupation, y = total_purchase, fill=City_Category)) +
+  geom_col() +
+  labs(x = 'Occupation', y = 'Total Purchase (dollars)', 
+       title = "Figure2.8 Toal purchase amount in each occupation by city category") + 
+  guides(fill=guide_legend(title = "City Category")) + 
+  scale_y_continuous(labels = scales::comma) #prevent scientific number in x-axis
+```
+
+From figure 2.8, we can find clients from the occupation number 8 spent the least money, while clients from occupation number 4 spent the most money.
+
+## 2.7 Correlation among the Number of Product_Category_1/2/3
+
+```{r, message=FALSE}
+library(dplyr)
+product <- bf %>%
+  select(Product_Category_1, Product_Category_2, Product_Category_3)
+res <- cor(product)
+round(res, 2)
+library(corrplot)
+corrplot(res, type = "upper", order = "hclust", tl.col = "black", tl.srt = 45, 
+         title = "Figure2.9 Correlation among the number of product_category_1/2/3")
+```
+
+From both the table and figure 2.9, we can see there is negetive relationship between product category 1 and 3, and positive relationship between product category 2 and 3.
+
+# 3 Modeling and Checking
+
+Because our goal is to predict the purchase amount of clients, in this part we began to make models to fit the train dataset. We will first make simple linear model, and then add interaction in it, and try polynomial, multinomial and multilevel models. Finally, based on methods for checking models, we choose the best model for prediction.
+
+The predictors include $\textbf{Gender}$, $\textbf{Age}$, $\textbf{Occupation}$, $\textbf{City_Category}$, $\textbf{Stay_In_Current_City_Years}$, $\textbf{Marital_Status}$, $\textbf{Product_Category_1}$, $\textbf{Product_Category_2}$ and $\textbf{Product_Category_3}$. The response variable is $\textbf{Purchase}$.
+
+## 3.1 Simple Linear Regression Model
+
+Let's first start with simple linear regression model. From the figure 2.1, we can see the purchase amount is skewed, so first we standardize purchase amount into $\textbf{sd_purchase}$ as response variable. After trying many times, we can obtain the following model whose AIC is smallest with all the predictors.
+
+```{r, message=FALSE, warning=FALSE}
+# Standardize the response variable
+bf$sd_purchase <- (bf$Purchase-mean(bf$Purchase))/sd(bf$Purchase)
+# Fit the full model 
+r1 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+           Product_Category_2 + Product_Category_3, data = bf)
+
+summary(r1)
+
+# Residual Plot
+plot(r1, which = 1)
+
+# Marginal model plots
+library(car)
+marginalModelPlots(r1)
+```
+
+From the summary result, the p value of F statistics is small and most coefficients are significant. However, from the residual plot, we can see that the points have a decreasing trend and are not randomly dispersed around the horizontal line at zero (the dashed black line). Also, we can see from the first marginal plot, there exists a big discrepency between the linear regression line and actual data line. And after looking at the last marginal plot, we can conclude the simple linear regression model does not fit the data well.
+
+## 3.2 Polynomial regression model
+
+```{r}
+ggplot(bf, aes(x=Product_Category_1, y=sd_purchase)) + 
+  geom_point() + 
+  geom_smooth(method="loess", se=F) + 
+  geom_count(col="tomato3", show.legend=F) +
+  #xlim(c(0, 0.1)) + 
+  #ylim(c(0, 500000)) + 
+  labs(y="Standardized Purchase Amount (dollars)", 
+       x="Product_Category_1", 
+       title="Figure3.1 Product_Category_1 Vs Standardized Purchase Amount")
+```
+
+From figure 3.1, we can see a nonlinear effect of $\textbf{Product_Category_1}$ on $\textbf{sd_purchase}$. Therefore, so then we will try to fit a polynomial regression model.
+
+```{r, message=FALSE, warning=FALSE}
+r2 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + 
+           poly(Product_Category_1, 2) + Product_Category_2 + Product_Category_3, data = bf)
+summary(r2)
+#round(r2$coefficients, digits = 2)
+# Residual Plot
+plot(r2, which = 1)
+
+# Marginal model plots
+library(car)
+marginalModelPlots(r2)
+```
+
+From the marginal plots, we can see there still exists a big discrepency between the linear regression line and actual data line.
+
+## 3.3 Linear regression model with interaction
+
+```{r, message=FALSE, warning=FALSE}
+r3 <- lm(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + 
+           Product_Category_2*Product_Category_3, data = bf)
+summary(r3)
+#round(r2$coefficients, digits = 2)
+# Residual Plot
+plot(r3, which = 1)
+
+# Marginal model plots
+library(car)
+marginalModelPlots(r3)
+
+# Coefficient plots
+arm::coefplot(r3)
+```
+
+We can see after adding the interaction, the residual plot is a little better than before but there still exists a decreasing trend. Besides, almost half of coefficients are not significant. Therefore, this model cannot fit the data very well.
+
+
+## 3.4 Cumulative logit model
+
+```{r, message=FALSE, warning=FALSE}
+plot(bf$sd_purchase, main = "Figure3.2 Standardized purchase amount distribution")
+
+ggplot(bf)+geom_point()+aes(x=Age,y=sd_purchase)+ 
+  labs(y="Standardized Purchase Amount (dollars)", 
+       x="Product_Category_1", 
+       title="Figure3.3 Age Vs Standardized Purchase Amount")
+```
+
+From figure 3.2 and 3.3, we can see the standardized purchase amount have some gaps although it is a continuous variable. Therefore, we will divide the value of standardized purchase amount into several categories. Therefore, standardized purchase amount is transformed to ordinal variable based on its quantiles. We do this transformation both in train and test datasets.
+
+```{r, message=FALSE, warning=FALSE}
+# Transform sd_purchase into ordinal variable
+# Train dataset
+quan <- quantile(bf$sd_purchase)
+
+bf <- bf%>% 
+  mutate(purchase_level=case_when(sd_purchase <= quan[2] ~"Low",
+                                  sd_purchase > quan[2] & sd_purchase <= quan[3] ~ "Somewhat Low",
+                                  sd_purchase > quan[3] & sd_purchase < quan[4] ~ "Somewhat High",
+                                  sd_purchase >= quan[4] ~"High"))
+
+bf$purchase_level <- factor(bf$purchase_level, 
+                            levels=c("Low", "Somewhat Low", "Somewhat High", "High"), ordered=TRUE)
+# Test dataset
+bf_test$sd_purchase <- (bf_test$Purchase-mean(bf_test$Purchase))/sd(bf_test$Purchase)
+bf_test <- bf_test %>% 
+  mutate(purchase_level=case_when(sd_purchase <= quan[2] ~"Low",
+                                  sd_purchase > quan[2] & sd_purchase <= quan[3] ~ "Somewhat Low",
+                                  sd_purchase > quan[3] & sd_purchase < quan[4] ~ "Somewhat High",
+                                  sd_purchase >= quan[4] ~"High"))
+
+bf_test$purchase_level <- factor(bf_test$purchase_level, 
+                            levels=c("Low", "Somewhat Low", "Somewhat High", "High"), ordered=TRUE)
+```
+
+The new response variable called $\textbf{purchase_level}$ has 4 categories including "Low", "Somewhat Low", "Somewhat High" and "High". Then we began to make ordinal logit model.
+
+```{r, message=FALSE, warning=FALSE}
+library(arm)
+r4 <- polr(purchase_level ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+           Product_Category_2*Product_Category_3, data = bf)
+summary(r4)
+
+ctable <- coef(summary(r4))
+p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+ctable <- cbind(ctable, "p value" = p)
+ctable
+```
+
+From the summary result and the table above, we can see the value of AIC is a little big although most of coefficients are significant. Then we will use test dataset to make predictions in order to check the accuracy of the model.
+
+```{r}
+# Prediction in test dataset
+predict.purchase <- predict(r4, bf_test)  # predict the classes directly
+head(predict.purchase)
+
+
+predicted.prop <- predict(r4, bf_test, type="p")  # predict the probabilites
+head(predicted.prop)
+
+# Build a confusion matrix
+table(predict.purchase, bf_test$purchase_level)
+
+# Compute the misclassification error rate of prediction
+mean(as.character(predict.purchase) != as.character(bf_test$purchase_level))
+```
+
+A misclassification error of 60.47% is probably too high. Maybe it can be improved by trying Multilevel model to improve the accuracy.
+
+
+## 3.5 Mixed Effects Model
+
+With this black friday retail dataset, since each User_ID has multiple purchase records, we can immediately see that this would violate the independence assumption that’s important in linear modeling, which is to say multiple purchase records from the same User_ID cannot be regarded as independent from each other. Besides, in our scenario, every User_ID has a slightly different consumption habit, and this is going to be an idiosyncratic factor that affects the measurements from the different User_IDs.
+
+
+```{r}
+ggplot(bf[1:313,], aes(sd_purchase)) +
+  geom_density(aes(fill=factor(User_ID)), alpha=0.8) + 
+    labs(title="Figure3.5 Standardized purchase amount density of first six User_ID",
+         x="Standardized Purchase Amount (dollars)",
+         fill="User_ID")
+
+ggplot(bf[1:313,], aes(User_ID, sd_purchase)) +
+  geom_violin() +
+    labs(title="Figure3.6 Standardized purchase amount distribution of first six User_ID", 
+         x="User_ID",
+         y="Standardized Purchase Amount (dollars)")
+
+
+ggplot(bf[1:313,]) + 
+  aes(x = Product_Category_2, y = sd_purchase) + 
+  stat_smooth(method = "lm", se = FALSE) +
+  geom_point() +
+  facet_wrap("User_ID") +
+  labs(title = "Figure3.7 Product_Category_2 V.S Standardized Purchase Amount by User_ID", 
+       x = "Product_Category_2", 
+       y = "Standardized Purchase Amount") 
+
+```
+
+From above three figures, we can see there are big differences in standardized purchase amount between groups. Therefore, in order to consider the differences among both individuals (each purchase) and groups (each User_ID), we should then fit the multilevel model.
+
+Individual level variables include $\textbf{Product_Category_1}$, $\textbf{Product_Category_2}$ and $\textbf{Product_Category_3}$. Group level variables include $\textbf{Gender}$, $\textbf{Age}$, $\textbf{Occupation}$, $\textbf{City_Category}$, $\textbf{Stay_In_Current_City_Years}$, $\textbf{Marital_Status}$.
+
+
+### 3.5.1 Mixed Effects Model (vary by intercept)
+
+First, we fit a mixed effects model with varying intercepts by groups (User_ID).
+
+```{r, message=FALSE, warning=FALSE}
+# Remove a variable
+r5_0 <- lmer(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+             Product_Category_2 + Product_Category_3 + (1|User_ID), data = bf)
+r5_1 <- lmer(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+             Product_Category_2 + (1|User_ID), data = bf)
+r5_2 <- lmer(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+             Product_Category_3 + (1|User_ID), data = bf)
+r5_3 <- lmer(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status +
+             Product_Category_2 + Product_Category_3 + (1|User_ID), data = bf)
+# Model choice
+anova(r5_0, r5_1, r5_2, r5_3) 
+anova(r5_2, r5_0)
+
+# Add interaction
+r5 <- lmer(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+             Product_Category_2*Product_Category_3 + (1|User_ID), data = bf)
+# Model Choice
+anova(r5, r5_0)
+```
+
+From the results of anova method to compare models, we can see if we remove one continuous variable from r5_0 model, we should choose to remove $\textbf{Product_Category_2}$ (in r5_2). However, when we campare r5_0 and r5_2 model, anova test shows p-value for chisq test is bigger than 0.05 so that we cannot reject the null hypothesis, which means the two models are equal in fitting the data. Then, we try to add the interaction between $\textbf{Product_Category_2}$ and $\textbf{Product_Category_3}$ in model r5, the anova test for r5 and r5_0 shows r5 model fits the data better because p-value is smaller than 0.05 and we reject the null hypothesis. Therefore, in the mixed effects model with varying intercepts, r5 model fits the data well.
+
+```{r, message=FALSE, warning=FALSE}
+summary(r5)
+```
+
+### 3.5.2 Multilevel regression (varying slopes)
+
+After trying many times, we can find that if slopes vary by City_Category, the model can converge. Therefore, the model is shown below.
+
+```{r, message=FALSE, warning=FALSE}
+r6 <- lmer(sd_purchase ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+             Product_Category_2 * Product_Category_3 + (1+City_Category|User_ID), data = bf)
+summary(r6)
+```
+
+Next, let's compare model r5 with r6 by anova test.
+
+```{r, message=FALSE}
+anova(r5, r6, refit=FALSE)
+AIC(r5, r6)
+```
+
+We can see $\chi^2(5)=0.3101$, $p=0.9974$, which means we cannot reject the null hypothesis. That is to say, adding random slopes for each User_ID doesn’t significantly improve model fit. Looking at the AIC values, AIC is higher for the more complex model (r6), so we want to go with the less complex (r5) model. In summary, it appears that we don’t need to include random slopes for City_Category in the model.
+
+# 4 Prediction and Discussion
+
+## 4.1 Prediction
+
+From part 3, we can finally decide to use model r5 to fit the train data. Then we can use it to make predictions in test datasets.
+
+### 4.1.1 Prediction for Test Dataset
+
+```{r}
+bf_test$Purchase.pre <- predict(r5, bf_test)*sd(bf$Purchase)+mean(bf$Purchase)
+head(bf_test$Purchase.pre)
+```
+
+Using the model output, we can generate regression lines using the predict() function. Using this method, we can simply add a new column to the existing bf_test data frame, giving the fitted value for each row in the data. However, for visualization, it is very useful to generate the fitted values for specific combinations of predictor values, instead of generating a fitted value for every observation. To do this, I simply create dataframes with the relevant predictors, and feed these data frames as data to predict().
+
+To get fitted values at the average level, we can just remove the User_ID. For the varying effects, we can create a data frame which include the User_ID. Both dataframes are selected from first 135 rows for bf_test dataset.
+
+```{r}
+# Data frame to evaluate average effects predictions on
+newavg <- bf_test[1:135,-1]
+newavg$Reaction <- predict(r5, re.form = NA, newavg)
+# Predictors for the varying effect's predictions
+newvary <- bf_test[1:135,]
+newvary$Reaction <- predict(r5, newvary)
+```
+
+On the left, a single fixed effects model versus the average regression line from the new multilevel model, and on the right the separate fixed effects models versus the varying regression lines from the multilevel model. Below, I use blue colors to indicate the fixed effects models’ predictions, and black for the multilevel model’s predictions.
+
+```{r}
+p1 <- ggplot(bf_test[1:135,], aes(x = Product_Category_2, y = sd_purchase)) +
+    geom_point(shape = 1) +
+    geom_smooth(method = "lm", fill = "dodgerblue", level = .95) 
+p2 <- p1 + facet_wrap(~User_ID, nrow = 3)
+
+pdp::grid.arrange(
+    p1 + geom_smooth(data = newavg, method = "lm", color = "black", size = 1)+
+  labs(title = "Figure4.1 Fixed Effects and Predictions",
+       x = "Product_Category_2", 
+       y = "Standardized Purchase Amount") ,
+    p2 + geom_smooth(data = newvary, method = "lm", color = "black", size = 1),
+    ncol = 2)
+```
+
+As we can probably tell, the fixed effects regression line (blue), and the multilevel model’s average regression line (black are nearly identical, because of the relatively balanced design. 
+
+
+### 4.1.2 Confidence interval-Average Level
+
+The confidence interval reflects the uncertainty around the mean predictions. To display the 95% confidence intervals around the mean the predictions, specify the option interval = "confidence":
+
+The method I will illustrate relies on random samples of plausible parameter values, from which we can then generate regression lines or draw inferences about the parameters themselves. These regression lines can then be used as their own distribution with their own respective summaries, such as an X% interval.
+
+The important parts of this code are:
+
+1) Simulating plausible parameter values  
+
+2) Saving the simulated samples (a faux posterior distribution) in a data frame
+
+3) Creating a predictor matrix
+
+4) Creating a matrix for the fitted values
+
+5) Calculating fitted values for each combination of the predictor values, for each plausible combination of the parameter values
+
+6) Calculating the desired quantiles of the fitted values
+
+```{r, message=FALSE, warning=FALSE}
+# Steps
+sims <- sim(r5, n.sims = 135)  # 1
+fs <- fixef(sims)  # 2
+Xmat <- model.matrix( ~ Gender + Age + Occupation + City_Category + 
+           Stay_In_Current_City_Years + Marital_Status + Product_Category_1 +
+             Product_Category_2*Product_Category_3, data = newavg)  # 3
+fitmat <- matrix(ncol = nrow(fs), nrow = nrow(newavg))  # 4
+for (i in 1:nrow(fs)) { fitmat[,i] <- Xmat %*% as.matrix(fs)[i,] }  # 5
+newavg$lower <- apply(fitmat, 1, quantile, prob=0.05)  # 6
+newavg$median <- apply(fitmat, 1, quantile, prob=0.5)  # 6
+newavg$upper <- apply(fitmat, 1, quantile, prob=0.95)  # 6
+
+# Plot
+p1 + geom_smooth(data = newavg, aes(y = median), method = "lm", color = "black", size = 1) +
+    geom_smooth(data = newavg, aes(y = lower), method = "lm", lty = 2) +
+    geom_smooth(data = newavg, aes(y = upper), method = "lm", lty = 2) +
+  labs(title = "Figure4.2 Confidence Interval-Average Level",
+       x = "Product_Category_2", 
+       y = "Standardized Purchase Amount")
+```
+
+Again, the average regression line and the fixed effect model’s regression line are nearly identical, but the former has a wider confidence interval (black dashed lines.)
+
+
+## 4.2 Discussion
+
+### 4.2.1 Implication
+
+The goal of modeling here is to understand the customer purchase behaviour and forecast purchase amount of clients in the future so that the retail company can create personalized offer for customers.
+
+Sales forecasting is a crucial part of the financial planning of a business. It's a self-assessment tool that uses past and current sales statistics to intelligently predict future performance. If a company predicts robust sales in the fourth quarter but only earns half that amount, it's a sign to stockholders that not only is the company performing poorly, but management is clueless. When attracting new investors to a private company, sales forecasts can be used to predict the potential return on investment. The overall effect of accurate sales forecasting is a business that runs more efficiently, saving money on excess inventory, increasing profit and serving its customers better.
+
+Accurate forecasts that meet the forthcoming consumption demands of customers help retail business owners and management to maximize and extend profits over the long term. Forecasting permits price adjustments to correspond with the current level of consumer spending patterns. Maintaining and controlling a sufficient but moderate inventory that meets the need without being excessive also adds to long-term profits in the retail industry. 
+
+
+### 4.2.2 Limitation
+
+Although we can use the relatively good model to help predict future phenomenon, no matter how good it is, the model will always have limitations.
+
+1) $\textbf{Missing Details}$: Most models can't incorporate all the details of complex natural phenomena. For example, in the case discussed here, there maybe some other factors besides variables included in the model, like psychology and income of clients. Since models must be simple enough that you can use them to make predictions, they often leave out some of the details.
+
+2) $\textbf{Many Approximations}$: The model we fit here include some approximations as a convenient way to describe something that happens in nature. These approximations are not exact, so predictions based on them tend to be a little bit different from what you actually observe -- close, but not bang on. These approximations are good, but they are approximations nonetheless.
+
+3) $\textbf{Many Assumptions}$: When we fit a model, we should make a lot of assumptions. For example, we need to assume the predictors are independent and the residuals are normally distributed and so on. But in reality, those assumptions cannot be completely realized.
+
+4) $\textbf{Experimental Errors}$: Experimental errors include random errors and systematic errors. Random errors can be evaluated through statistical analysis and can be reduced by averaging over a large number of observations. However, in the dataset we discuss here, obviously the number of observations are not large enough, which may affect the accuracy of the prediction. Systematic errors are difficult to detect and cannot be analyzed statistically.
+
+5) $\textbf{Transparency}$: The data used for modeling should be transparent. Otherwise, if the data is fabricated, the model would be not accurate enough to make predictions.
+
+
+
+### 4.2.3 Future Direction
+
+Retail forecasting methods anticipate the future purchasing actions of consumers by evaluating past revenue and consumer behavior over the previous months or year to discern patterns and develop forecasts for the upcoming months. Data is adjusted for seasonal trends, and then a plan for ordering and stocking products may follow the analysis. After fulfillment of current and forthcoming customer purchases and orders, an assessment of the results is compared with previous forecasts, and the entire procedure is repeated.
+
+
+# Acknowledgement
+
+I would like to express my deepest appreciation to all those who provided me with the possibility to complete this report. A special gratitude I give to our final project instructor, [Mr Yajima], whose contribution in stimulating suggestions and encouragement, helped me to coordinate my project especially in modeling selection. Sincere thanks go to my classmates, [Ms Wang, Yu, Rong and Mr Yan], who gave me useful materials.
+
+# Reference
+
+Rune Haubo B Christensen. A Tutorial on fitting Cumulative Link Mixed Models with clmm2 from the ordinal Package. August 25, 2018
+
+Andrew Gelman, Jennifer Hill. Data Analysis Using Regression and Multilevel_Hierarchical Models. 2006, Cambridge University Press
+
+https://vuorre.netlify.com/post/2016/2016-03-06-multilevel-predictions/
+
+https://cran.r-project.org/web/packages/jtools/vignettes/summ.html
+
+https://web.stanford.edu/class/psych252/section/Mixed_models_tutorial.html
+
+http://r-statistics.co/Ordinal-Logistic-Regression-With-R.html
+
+# Appendix
+
+```{r}
+ggplot(bf, aes(x=Product_Category_1, y=Purchase)) + 
+  geom_jitter(aes(col=Gender)) + 
+  geom_smooth(aes(col=Gender), method="lm", se=F) +
+  labs(title="Purchase Amount Vs Product_Category_1",
+       x = "Product_Category_1", 
+       y = "Purchase Amount (dollars)")
+
+```
+
+
+
+
+
